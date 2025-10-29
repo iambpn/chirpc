@@ -38,7 +38,7 @@ func AddGlobalMiddlewares(r *RPCRouter, middlewares ...MiddlewareType) {
 
 func AddHandler[T any](r *RPCRouter, method HttpMethods, path string, handler RequestHandler[T], middlewares ...MiddlewareType) {
 	// register handler type to generate ts types
-	err := rpcType.RegisterHandler(handler, path, string(method))
+	err := rpcType.RegisterHandler(string(method), path, handler)
 
 	if err != nil {
 		fmt.Println("Error registering handler:", err)
@@ -80,7 +80,7 @@ func NotFound(r *RPCRouter, fn http.HandlerFunc) {
 
 func RegisterErrorHandler[T any](handler ErrorHandlerType[T]) {
 	// register handler type to generate ts types
-	err := rpcType.RegisterHandler(handler, "/", "ERROR_HANDLER")
+	err := rpcType.RegisterHandler("ERROR_HANDLER", "/", handler)
 
 	if err != nil {
 		fmt.Println("Error registering error handler:", err)

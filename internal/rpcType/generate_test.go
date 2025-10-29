@@ -72,7 +72,7 @@ func TestRegisterHandler_StoresSchemaInformation(t *testing.T) {
 		return nil, nil
 	}
 
-	if err := RegisterHandler(handler, "/users", "get"); err != nil {
+	if err := RegisterHandler("get", "/users", handler); err != nil {
 		t.Fatalf("unexpected error registering handler: %v", err)
 	}
 
@@ -98,7 +98,7 @@ func TestRegisterHandler_ErrorsOnNonFunction(t *testing.T) {
 	resetTypeRegistry()
 	t.Cleanup(resetTypeRegistry)
 
-	if err := RegisterHandler(123, "/invalid", "post"); err == nil {
+	if err := RegisterHandler("post", "/invalid", 123); err == nil {
 		t.Fatalf("expected error when registering non-function handler")
 	}
 }
@@ -111,7 +111,7 @@ func TestConvertToTs_GeneratesSingleHandlerSchema(t *testing.T) {
 		return nil, nil
 	}
 
-	if err := RegisterHandler(handler, "/status", "get"); err != nil {
+	if err := RegisterHandler("get", "/status", handler); err != nil {
 		t.Fatalf("unexpected error registering handler: %v", err)
 	}
 
@@ -153,11 +153,11 @@ func TestConvertToTs_HandlesNestedTypesAcrossHandlers(t *testing.T) {
 		return nil, nil
 	}
 
-	if err := RegisterHandler(userHandler, "/users/{id}", "get"); err != nil {
+	if err := RegisterHandler("get", "/users/{id}", userHandler); err != nil {
 		t.Fatalf("registering user handler failed: %v", err)
 	}
 
-	if err := RegisterHandler(teamHandler, "/teams", "post"); err != nil {
+	if err := RegisterHandler("post", "/teams", teamHandler); err != nil {
 		t.Fatalf("registering team handler failed: %v", err)
 	}
 

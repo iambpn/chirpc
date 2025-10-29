@@ -48,7 +48,7 @@ func extractReturnType(typeVal reflect.Type) (reflect.Type, error) {
 	return retType, nil
 }
 
-func RegisterHandler(fnVal any, url, method string) error {
+func RegisterHandler(method, url string, fnVal any) error {
 	typeVal := reflect.TypeOf(fnVal)
 
 	retType, err := extractReturnType(typeVal)
