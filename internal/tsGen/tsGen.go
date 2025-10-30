@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	orderedmap "github.com/elliotchance/orderedmap/v3"
+	"github.com/iambpn/chirpc/internal/stringUtils"
 	"github.com/iambpn/chirpc/internal/tsGen/tsInterface"
 	"github.com/iambpn/chirpc/internal/tsGen/tsopts"
 )
@@ -166,7 +167,12 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 
 			// check if the nested struct type has already been generated
 			if _, exists := t.builder.QueryType(nestedHeaderName); exists {
-				formattedKey := getTagKey(structField, t.opt)
+				formattedKey := getTagKey(structField)
+
+				if formattedKey == "" {
+					formattedKey = stringUtils.ShouldToLower(structField.Name, opt[tsopts.ToLowercase])
+				}
+
 				tsInf.AddProperty(formattedKey, nestedHeaderName, isFieldOptional(structField))
 				continue
 			}
@@ -175,7 +181,12 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 			childTsInf.SetPrimary(false)
 			t.builder.RegisterType(childTsInf)
 
-			formattedKey := getTagKey(structField, t.opt)
+			formattedKey := getTagKey(structField)
+
+			if formattedKey == "" {
+				formattedKey = stringUtils.ShouldToLower(structField.Name, opt[tsopts.ToLowercase])
+			}
+
 			tsInf.AddProperty(formattedKey, nestedHeaderName, isFieldOptional(structField))
 			continue
 		}
@@ -185,7 +196,12 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 			tsType = t.GetType(structField)
 		}
 
-		formattedKey := getTagKey(structField, t.opt)
+		formattedKey := getTagKey(structField)
+
+		if formattedKey == "" {
+			formattedKey = stringUtils.ShouldToLower(structField.Name, opt[tsopts.ToLowercase])
+		}
+
 		tsInf.AddProperty(formattedKey, tsType, isFieldOptional(structField))
 	}
 

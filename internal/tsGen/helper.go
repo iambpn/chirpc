@@ -44,16 +44,57 @@ func getTagType(field reflect.StructField) string {
 	return ""
 }
 
-func getTagKey(field reflect.StructField, opt tsopts.TsGenOpts) string {
-	fieldKey := field.Name
-	if key, exists := field.Tag.Lookup(structTagKey); exists {
-		fieldKey = key
+func getTagKey(field reflect.StructField) string {
+	// check for json tag first
+	if jsonTagKey := getJsonTagValue(field); jsonTagKey != "" {
+		return jsonTagKey
 	}
 
-	return stringUtils.ShouldToLower(fieldKey, opt[tsopts.ToLowercase])
+	// then check for tsKey tag
+	if key, exists := field.Tag.Lookup(structTagKey); exists {
+		return key
+	}
+
+	return ""
+}
+
+// getJsonTagValue returns the value of the "json" struct tag for a given field.
+// If the "json" tag is not present or has no value, it returns an empty string.
+// For example, for a struct field defined as:
+//
+//	FieldName string `json:"field_name,omitempty"`
+//
+// This function will return "field_name".
+func getJsonTagValue(field reflect.StructField) string {
+	if jsonTag, exists := field.Tag.Lookup("json"); exists {
+		splitTag := strings.Split(jsonTag, ",")
+		if len(splitTag) > 0 && splitTag[0] != "" {
+			return splitTag[0]
+		}
+	}
+
+	return ""
+}
+
+// isJsonTagOptional checks if the "json" struct tag for a given field includes "omitempty" or "omitzero".
+// It returns true if either option is present, indicating that the field is optional in JSON serialization.
+func isJsonTagOptional(field reflect.StructField) bool {
+	if jsonTag, exists := field.Tag.Lookup("json"); exists {
+		if strings.Contains(jsonTag, ",omitempty") || strings.Contains(jsonTag, ",omitzero") {
+			return true
+		}
+	}
+
+	return false
 }
 
 func isFieldOptional(field reflect.StructField) bool {
+	// check for json tag first
+	if isJsonTagOptional(field) {
+		return true
+	}
+
+	// then check for tsOptional tag
 	if optional, exists := field.Tag.Lookup(structTagOptional); exists {
 		if strings.ToLower(optional) == "true" {
 			return true

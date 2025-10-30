@@ -35,3 +35,6 @@ node_modules
 
 # Generated files
 apiSchema.ts
+
+# build folder
+build/
