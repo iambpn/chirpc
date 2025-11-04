@@ -71,6 +71,10 @@ func (t *TsGen) GetType(field reflect.StructField) string {
 func (t *TsGen) AddValue(val any, opts ...tsopts.TsGenOpts) error {
 	valType := reflect.TypeOf(val)
 
+	if valType.Kind() == reflect.Pointer {
+		valType = valType.Elem()
+	}
+
 	err := t.registerStruct(valType, "", opts...)
 	if err != nil {
 		return err
@@ -81,6 +85,10 @@ func (t *TsGen) AddValue(val any, opts ...tsopts.TsGenOpts) error {
 
 func (t *TsGen) AddValueWithName(val any, headerName string, opts ...tsopts.TsGenOpts) error {
 	valType := reflect.TypeOf(val)
+
+	if valType.Kind() == reflect.Pointer {
+		valType = valType.Elem()
+	}
 
 	err := t.registerStruct(valType, headerName, opts...)
 	if err != nil {

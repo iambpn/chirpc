@@ -14,7 +14,7 @@ type Config struct {
 	ToLower    bool `tsKey:"to_lower"`
 	AddHeader  bool `tsOptional:"true"`
 	GenericAny tsGen.GenericAny
-	Anyy       any `json:"any_field"` // make sure it works with json tags also
+	Anyy       any `json:"json_any_field"` // make sure it works with json tags also
 	Nested     Nested
 	AnonNested struct {
 		AnonField int
