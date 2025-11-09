@@ -104,53 +104,22 @@ func TestSendResponse_WritesInternalServerErrorOnMarshalFailure(t *testing.T) {
 	}
 }
 
-func TestParseURLSlugSingle(t *testing.T) {
-	cases := []struct {
-		in   string
-		want []string
-	}{
-		{"/users/{id}", []string{"id"}},
-		{"{one}", []string{"one"}},
-		{"/no/slugs/here", []string{}},
-		{"", []string{}},
-	}
-
-	for _, c := range cases {
-		got := parseURLSlug(c.in)
-		if len(got) != len(c.want) {
-			t.Fatalf("parseURLSlug(%q) len = %d, want %d (%v)", c.in, len(got), len(c.want), got)
-		}
-		for i := range got {
-			if got[i] != c.want[i] {
-				t.Fatalf("parseURLSlug(%q)[%d] = %q, want %q", c.in, i, got[i], c.want[i])
-			}
-		}
-	}
-}
-
-func TestParseURLSlugMultiple(t *testing.T) {
-	got := parseURLSlug("/{user}/{id}")
-	if len(got) != 2 || got[0] != "user" || got[1] != "id" {
-		t.Fatalf("parseURLSlug multi failed: got %v, want [user id]", got)
-	}
-}
-
 func TestIsJSONMarshable(t *testing.T) {
 	type sample struct{ X int }
 	var (
-		sampleVal sample
-		intVal    int
-		strVal    string
-		mapVal    = map[string]int{}
-		sliceVal  = []string{}
-		arrayVal  = [2]int{}
-		boolVal   = true
-		floatVal  = 3.14
-		ifaceVal  interface{} = 5
-		ptrVal    = &sampleVal
-		chanVal   = make(chan int)
-		funcVal   = func() {}
-		complexVal complex64 = 1 + 2i
+		sampleVal  sample
+		intVal     int
+		strVal     string
+		mapVal                 = map[string]int{}
+		sliceVal               = []string{}
+		arrayVal               = [2]int{}
+		boolVal                = true
+		floatVal               = 3.14
+		ifaceVal   interface{} = 5
+		ptrVal                 = &sampleVal
+		chanVal                = make(chan int)
+		funcVal                = func() {}
+		complexVal complex64   = 1 + 2i
 	)
 
 	cases := []struct {

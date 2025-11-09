@@ -7,11 +7,13 @@ import (
 	orderedmap "github.com/elliotchance/orderedmap/v3"
 )
 
+// interfaceValue represents a struct property value in a TypeScript interface.
 type interfaceValue struct {
 	Value      string
 	IsOptional bool
 }
 
+// TsInterface models a TypeScript interface, supporting named and anonymous interfaces.
 type TsInterface struct {
 	shouldExport bool
 	name         string
@@ -19,14 +21,17 @@ type TsInterface struct {
 	isPrimary    bool
 }
 
+// AddInterfaceName sets the name of the TypeScript interface.
 func (t *TsInterface) AddInterfaceName(headerName string) {
 	t.name = headerName
 }
 
+// GetInterfaceName returns the name of the TypeScript interface.
 func (t *TsInterface) GetInterfaceName() string {
 	return t.name
 }
 
+// AddProperty adds a property to the TypeScript interface.
 func (t *TsInterface) AddProperty(key, value string, isOptional bool) {
 	t.body.Set(key, &interfaceValue{
 		Value:      value,
@@ -34,10 +39,12 @@ func (t *TsInterface) AddProperty(key, value string, isOptional bool) {
 	})
 }
 
+// RemoveProperty removes a property from the TypeScript interface.
 func (t *TsInterface) RemoveProperty(key string) {
 	t.body.Delete(key)
 }
 
+// GetProperty retrieves a property from the TypeScript interface by key.
 func (t *TsInterface) GetProperty(key string) (*interfaceValue, error) {
 	if val, ok := t.body.Get(key); ok {
 		return val, nil
@@ -46,14 +53,17 @@ func (t *TsInterface) GetProperty(key string) (*interfaceValue, error) {
 	return nil, fmt.Errorf("key '%s' not found in TsInterface", key)
 }
 
+// IsPrimary returns whether this interface is marked as primary.
 func (t *TsInterface) IsPrimary() bool {
 	return t.isPrimary
 }
 
+// SetPrimary sets whether this interface is marked as primary.
 func (t *TsInterface) SetPrimary(isPrimary bool) {
 	t.isPrimary = isPrimary
 }
 
+// String returns the TypeScript interface as a string representation.
 func (t *TsInterface) String() string {
 	result := []string{}
 
@@ -84,6 +94,7 @@ func (t *TsInterface) String() string {
 	return strings.Join(result, " ")
 }
 
+// New creates a new TsInterface instance.
 func New(shouldExport bool) *TsInterface {
 	return &TsInterface{
 		shouldExport: shouldExport,

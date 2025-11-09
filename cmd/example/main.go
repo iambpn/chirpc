@@ -33,7 +33,7 @@ func main() {
 
 	chirpc.RegisterErrorHandler(ErrorHandler)
 
-	err := chirpc.BuildRpcTypes()
+	err := chirpc.GenerateRpcTypes()
 
 	if err != nil {
 		fmt.Println("Error generating types:", err.Error())

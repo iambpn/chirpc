@@ -9,6 +9,9 @@ import (
 	"github.com/iambpn/chirpc/internal/tsGen/tsopts"
 )
 
+// getHeaderName generates a header name for a given type based on the provided TypeScript generation options.
+// It dereferences pointer types, applies capitalization rules, and includes the package name if not in "main".
+// The header name is used for TypeScript interface generation and can be customized via options.
 func getHeaderName(valType reflect.Type, opt tsopts.TsGenOpts) string {
 	// dereference pointer types
 	for valType.Kind() == reflect.Ptr {
@@ -24,13 +27,14 @@ func getHeaderName(valType reflect.Type, opt tsopts.TsGenOpts) string {
 		headerName = stringUtils.Uncapitalize(valType.Name())
 	}
 
+	// get package path of the type
 	packagePath := valType.PkgPath()
 
 	if strings.ToLower(packagePath) != "main" {
 		pathSlice := strings.Split(packagePath, "/")
 
+		// use last segment of package path as package name
 		packageName := stringUtils.Capitalize(pathSlice[len(pathSlice)-1])
-
 		if opt[tsopts.UnCapitalizeHeader] {
 			packageName = stringUtils.Uncapitalize(pathSlice[len(pathSlice)-1])
 		}
@@ -41,6 +45,8 @@ func getHeaderName(valType reflect.Type, opt tsopts.TsGenOpts) string {
 	return headerName
 }
 
+// getTagType returns the value of the custom struct tag "structTagType" for the given field.
+// If the tag is not present, it returns an empty string.
 func getTagType(field reflect.StructField) string {
 	if tagType, exists := field.Tag.Lookup(structTagType); exists {
 		return tagType
@@ -49,6 +55,10 @@ func getTagType(field reflect.StructField) string {
 	return ""
 }
 
+// getTagKey returns the key name for a struct field based on its tags.
+// It first checks for a "json" tag and returns its value if present.
+// If not, it checks for a custom "tsKey" tag and returns its value.
+// If neither tag is present, it returns an empty string.
 func getTagKey(field reflect.StructField) string {
 	// check for json tag first
 	if jsonTagKey := getJsonTagValue(field); jsonTagKey != "" {
@@ -93,6 +103,9 @@ func isJsonTagOptional(field reflect.StructField) bool {
 	return false
 }
 
+// isFieldOptional determines whether a struct field should be considered optional for TypeScript generation.
+// It checks if the field has a "json" tag with "omitempty" or "omitzero", or a custom "tsOptional" tag set to "true".
+// Returns true if the field is optional, otherwise false.
 func isFieldOptional(field reflect.StructField) bool {
 	// check for json tag first
 	if isJsonTagOptional(field) {

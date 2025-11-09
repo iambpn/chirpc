@@ -257,7 +257,7 @@ func TestBuildRpcTypesWritesDefaultFile(t *testing.T) {
 	path := "apiSchema.ts"
 	t.Cleanup(func() { _ = os.Remove(path) })
 
-	if err := BuildRpcTypes(); err != nil {
+	if err := GenerateRpcTypes(); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -275,7 +275,7 @@ func TestBuildRpcTypesWritesToCustomPath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "schema.ts")
 
-	if err := BuildRpcTypes(path); err != nil {
+	if err := GenerateRpcTypes(path); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -293,7 +293,7 @@ func TestBuildRpcTypesReturnsErrorWhenWriteFails(t *testing.T) {
 	dir := t.TempDir()
 	unreachable := filepath.Join(dir, "nested", "schema.ts")
 
-	err := BuildRpcTypes(unreachable)
+	err := GenerateRpcTypes(unreachable)
 	if err == nil {
 		t.Fatal("expected error when parent directories are missing")
 	}

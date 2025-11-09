@@ -13,7 +13,7 @@ func TestSetToLowerExportedField(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := SetToLowerExportedField(tc.input)
+			cfg := SetToLowercaseExportedField(tc.input)
 			if cfg == nil {
 				t.Fatalf("expected non-nil map")
 			}
@@ -70,7 +70,7 @@ func TestSetUnCapitalizeHeader(t *testing.T) {
 }
 
 func TestMergeOpts(t *testing.T) {
-	lower := SetToLowerExportedField(true)
+	lower := SetToLowercaseExportedField(true)
 	header := SetAddHeaderToInterface(false)
 	merged := MergeOpts(lower, header)
 
@@ -97,8 +97,8 @@ func TestMergeOpts(t *testing.T) {
 }
 
 func TestMergeOptsOverrides(t *testing.T) {
-	first := SetToLowerExportedField(true)
-	second := SetToLowerExportedField(false)
+	first := SetToLowercaseExportedField(true)
+	second := SetToLowercaseExportedField(false)
 
 	merged := MergeOpts(first, second)
 	if len(merged) != 1 {

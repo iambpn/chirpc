@@ -96,7 +96,7 @@ func TestAddValueWithNameUsesExplicitHeader(t *testing.T) {
 }
 
 func TestRegisterStructWithTags(t *testing.T) {
-	gen := New(tsopts.SetToLowerExportedField(true))
+	gen := New(tsopts.SetToLowercaseExportedField(true))
 
 	if err := gen.AddValue(profileFixture{}); err != nil {
 		t.Fatalf("AddValue returned error: %v", err)
@@ -263,7 +263,7 @@ func TestBuilderStringFormatting(t *testing.T) {
 }
 
 func TestTsTagTypeAndOptionalOverride(t *testing.T) {
-	gen := New(tsopts.SetToLowerExportedField(true))
+	gen := New(tsopts.SetToLowercaseExportedField(true))
 
 	type TsTypeFixture struct {
 		Raw   int    `tsType:"CustomType"`
@@ -284,7 +284,7 @@ func TestTsTagTypeAndOptionalOverride(t *testing.T) {
 }
 
 func TestMapNumberKeyAndPtrSliceAndPtrMap(t *testing.T) {
-	gen := New(tsopts.SetToLowerExportedField(true))
+	gen := New(tsopts.SetToLowercaseExportedField(true))
 
 	type ComplexFixture struct {
 		MapNumber map[int]string
@@ -316,7 +316,7 @@ func TestAddTypeRejectsPointerType(t *testing.T) {
 }
 
 func TestNestedStructReuse(t *testing.T) {
-	gen := New(tsopts.SetToLowerExportedField(true))
+	gen := New(tsopts.SetToLowercaseExportedField(true))
 
 	type parent struct {
 		Left  nestedKind

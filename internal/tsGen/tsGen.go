@@ -1,5 +1,9 @@
 package tsGen
 
+/*
+Convert Go structs to TypeScript interfaces.
+*/
+
 import (
 	"errors"
 	"fmt"
@@ -11,17 +15,25 @@ import (
 	"github.com/iambpn/chirpc/internal/tsGen/tsopts"
 )
 
+// GenericAny is an alias for any type, used for generic purposes.
 type GenericAny any
 
+// TsGen is responsible for converting Go structs to TypeScript interfaces.
 type TsGen struct {
 	opt     tsopts.TsGenOpts
 	builder *tsInterface.TsInterfaceBuilder
 }
 
+// structTagKey is the struct tag used to specify the TypeScript property name.
 const structTagKey = "tsKey"
+
+// structTagType is the struct tag used to specify the TypeScript type.
 const structTagType = "tsType"
+
+// structTagOptional is the struct tag used to specify if the TypeScript property is optional.
 const structTagOptional = "tsOptional"
 
+// GetType returns the TypeScript type string for a given Go struct field.
 func (t *TsGen) GetType(field reflect.StructField) string {
 	switch field.Type.Kind() {
 	case reflect.Bool:
@@ -68,6 +80,7 @@ func (t *TsGen) GetType(field reflect.StructField) string {
 	}
 }
 
+// AddValue registers a Go value's type for TypeScript interface generation.
 func (t *TsGen) AddValue(val any, opts ...tsopts.TsGenOpts) error {
 	valType := reflect.TypeOf(val)
 
@@ -83,6 +96,7 @@ func (t *TsGen) AddValue(val any, opts ...tsopts.TsGenOpts) error {
 	return nil
 }
 
+// AddValueWithName registers a Go value's type with a custom TypeScript interface name.
 func (t *TsGen) AddValueWithName(val any, headerName string, opts ...tsopts.TsGenOpts) error {
 	valType := reflect.TypeOf(val)
 
@@ -98,6 +112,7 @@ func (t *TsGen) AddValueWithName(val any, headerName string, opts ...tsopts.TsGe
 	return nil
 }
 
+// AddType registers a Go type for TypeScript interface generation.
 func (t *TsGen) AddType(valType reflect.Type, opts ...tsopts.TsGenOpts) error {
 	err := t.registerStruct(valType, "", opts...)
 	if err != nil {
@@ -107,6 +122,7 @@ func (t *TsGen) AddType(valType reflect.Type, opts ...tsopts.TsGenOpts) error {
 	return nil
 }
 
+// AddTypeWithName registers a Go type with a custom TypeScript interface name.
 func (t *TsGen) AddTypeWithName(valType reflect.Type, headerName string, opts ...tsopts.TsGenOpts) error {
 	err := t.registerStruct(valType, headerName, opts...)
 	if err != nil {
@@ -116,14 +132,17 @@ func (t *TsGen) AddTypeWithName(valType reflect.Type, headerName string, opts ..
 	return nil
 }
 
+// String returns the generated TypeScript interfaces as a string.
 func (t *TsGen) String() string {
 	return t.builder.String()
 }
 
+// GetRegisteredTypes returns all registered TypeScript interfaces.
 func (t *TsGen) GetRegisteredTypes() *orderedmap.OrderedMap[string, *tsInterface.TsInterface] {
 	return t.builder.GetTypes()
 }
 
+// registerStruct registers a Go struct type for TypeScript interface generation.
 func (t *TsGen) registerStruct(valType reflect.Type, headerName string, opts ...tsopts.TsGenOpts) error {
 	allOpts := append([]tsopts.TsGenOpts{t.opt}, opts...)
 	opt := tsopts.MergeOpts(allOpts...)
@@ -138,6 +157,7 @@ func (t *TsGen) registerStruct(valType reflect.Type, headerName string, opts ...
 	return nil
 }
 
+// buildTsStruct builds a TypeScript interface from a Go struct type.
 func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopts.TsGenOpts) *tsInterface.TsInterface {
 	if headerName == "" {
 		headerName = getHeaderName(valType, opt)
@@ -164,7 +184,7 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 		if structField.Type.Name() != "" && structField.Type.Kind() == reflect.Struct {
 			// to check for cache header is required
 			newOpt := tsopts.MergeOpts(
-				tsopts.SetToLowerExportedField(t.opt[tsopts.ToLowercase]),
+				tsopts.SetToLowercaseExportedField(t.opt[tsopts.ToLowercase]),
 				tsopts.SetAddHeaderToInterface(true),
 			)
 
@@ -216,6 +236,7 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 	return tsInf
 }
 
+// New creates a new TsGen instance with the provided options.
 func New(options ...tsopts.TsGenOpts) *TsGen {
 	opt := tsopts.MergeOpts(options...)
 

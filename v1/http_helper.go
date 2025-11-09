@@ -1,3 +1,5 @@
+// Package chirpc provides helper utilities for handling HTTP responses,
+// including writing typed JSON payloads, setting headers, and basic error handling.
 package chirpc
 
 import (
@@ -6,6 +8,13 @@ import (
 	"reflect"
 )
 
+/*
+Helper functions for handling HTTP responses.
+*/
+
+// sendResponse writes the provided HttpResponse to the ResponseWriter by setting
+// headers, marshalling the body to JSON when possible, and writing the status code.
+// If JSON marshalling fails or the body is not marshallable, it writes an HTTP 500 error.
 func sendResponse[T any](w http.ResponseWriter, resp *HttpResponse[T]) {
 	for k, v := range resp.Headers {
 		w.Header().Set(k, v)
@@ -32,6 +41,8 @@ func sendResponse[T any](w http.ResponseWriter, resp *HttpResponse[T]) {
 	http.Error(w, "payload is not marshallable", http.StatusInternalServerError)
 }
 
+// isJSONMarshable reports whether the given reflect.Kind is supported by encoding/json
+// for marshaling (including pointers and interfaces that ultimately resolve to supported kinds).
 func isJSONMarshable(v reflect.Kind) bool {
 	// Check for basic types that can be marshaled to JSON
 	switch v {
@@ -46,30 +57,4 @@ func isJSONMarshable(v reflect.Kind) bool {
 	default:
 		return false
 	}
-}
-
-func parseURLSlug(url string) []string {
-	slugs := []string{}
-
-	slug := ""
-	bracketOpenCount := 0
-	for _, part := range url {
-		if part == '{' {
-			bracketOpenCount++
-			continue
-		}
-
-		if part == '}' && bracketOpenCount == 1 {
-			bracketOpenCount--
-			slugs = append(slugs, slug)
-			slug = ""
-			continue
-		}
-
-		if bracketOpenCount > 0 {
-			slug += string(part)
-		}
-	}
-
-	return slugs
 }

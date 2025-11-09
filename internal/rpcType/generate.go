@@ -12,6 +12,12 @@ import (
 	"github.com/iambpn/chirpc/internal/tsGen/tsopts"
 )
 
+/*
+Convert Go types used in RPC handlers to TypeScript interfaces.
+*/
+
+// TsGoSchema represents RPC handler metadata used to generate TypeScript types.
+// It stores HTTP method, URL, and Go types for return, body, query, and path params.
 type TsGoSchema struct {
 	method     string
 	url        string
@@ -21,8 +27,11 @@ type TsGoSchema struct {
 	queryType  reflect.Type
 }
 
+// types holds all registered TsGoSchema entries pending TypeScript conversion.
 var types = []*TsGoSchema{}
 
+// extractReturnType returns the first (non-pointer) return type of a function.
+// It errors if the input is not a function or has no return values.
 func extractReturnType(typeVal reflect.Type) (reflect.Type, error) {
 	if typeVal.Kind() == reflect.Pointer {
 		typeVal = typeVal.Elem()
@@ -49,6 +58,8 @@ func extractReturnType(typeVal reflect.Type) (reflect.Type, error) {
 	return retType, nil
 }
 
+// RegisterHandler registers an RPC handler with its method, URL, and return type.
+// It returns a TsGoSchema for optional body, query, and params enrichment.
 func RegisterHandler(method, url string, fnVal any) (*TsGoSchema, error) {
 	typeVal := reflect.TypeOf(fnVal)
 
@@ -68,6 +79,8 @@ func RegisterHandler(method, url string, fnVal any) (*TsGoSchema, error) {
 	return &schema, nil
 }
 
+// SetBodyType assigns a struct type (value or pointer) as the request body type.
+// Non-struct inputs are ignored with a warning to stderr.
 func SetBodyType(schema *TsGoSchema, body any) {
 	bodyType := reflect.TypeOf(body)
 
@@ -83,6 +96,8 @@ func SetBodyType(schema *TsGoSchema, body any) {
 	schema.bodyType = bodyType
 }
 
+// SetQueryType assigns a struct type (value or pointer) as the query type.
+// Non-struct inputs are ignored with a warning to stderr.
 func SetQueryType(schema *TsGoSchema, query any) {
 	queryType := reflect.TypeOf(query)
 
@@ -98,10 +113,13 @@ func SetQueryType(schema *TsGoSchema, query any) {
 	schema.queryType = queryType
 }
 
+// SetParamsType converts path param slugs into a TypeScript interface shape and stores it on the schema.
 func SetParamsType(schema *TsGoSchema, slugs []string) {
 	schema.paramsType = sliceToTsInf(slugs)
 }
 
+// ConvertToTs generates consolidated TypeScript interfaces and RPC schema mappings
+// for all registered handlers. It returns the combined TypeScript code.
 func ConvertToTs() (string, error) {
 	rt := NewRpcType(true)
 	globalTsTypes := orderedmap.NewOrderedMap[string, string]()
@@ -200,6 +218,8 @@ func ConvertToTs() (string, error) {
 	return fmt.Sprintf("%s\n%s", strings.Join(tsTypes, "\n"), rt.String()), nil
 }
 
+// sliceToTsInf builds a TypeScript interface string mapping each slug to string,
+// or returns 'never' if the slice is empty.
 func sliceToTsInf(slice []string) string {
 	if len(slice) == 0 {
 		return "never"
