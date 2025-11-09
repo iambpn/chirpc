@@ -56,6 +56,13 @@ func TestGetHeaderName(t *testing.T) {
 	}
 }
 
+func TestGetHeaderNamePointer(t *testing.T) {
+	got := getHeaderName(reflect.TypeOf(&sampleStruct{}), tsopts.SetAddHeaderToInterface(true))
+	if got != "TsGen__SampleStruct" {
+		t.Fatalf("getHeaderName(pointer) = %q, want %q", got, "TsGen__SampleStruct")
+	}
+}
+
 func TestGetTagType(t *testing.T) {
 	type tagged struct {
 		WithTag string `tsType:"string"`
@@ -198,3 +205,5 @@ func TestIsJsonTagOptional(t *testing.T) {
 		t.Fatalf("isJsonTagOptional(no tag) = true, want false")
 	}
 }
+
+

@@ -5,9 +5,9 @@ clean:
 	go clean && rm -f build/
 
 run:
-	go run cmd/main.go
+	go run cmd/example/main.go
 
 test:
-	go test ./...
+	go test ./... --cover
 
 .PHONY: run clean build test

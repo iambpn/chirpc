@@ -9,7 +9,7 @@ func TestTsInterfaceBuilderRegisterAndQuery(t *testing.T) {
 
 	builder.RegisterType(user)
 
-	got, ok := builder.QueryType("User")
+	got, ok := builder.GetType("User")
 	if !ok {
 		t.Fatalf("expected to find registered type")
 	}
@@ -17,7 +17,7 @@ func TestTsInterfaceBuilderRegisterAndQuery(t *testing.T) {
 		t.Fatalf("expected QueryType to return registered instance")
 	}
 
-	if _, ok := builder.QueryType("Unknown"); ok {
+	if _, ok := builder.GetType("Unknown"); ok {
 		t.Fatalf("expected missing type lookup to return ok=false")
 	}
 }
@@ -54,7 +54,7 @@ func TestTsInterfaceBuilderGetTypesIsLive(t *testing.T) {
 	direct.AddInterfaceName("Direct")
 	types.Set(direct.GetInterfaceName(), direct)
 
-	got, ok := builder.QueryType("Direct")
+	got, ok := builder.GetType("Direct")
 	if !ok {
 		t.Fatalf("expected QueryType to see type inserted via GetTypes")
 	}
@@ -84,7 +84,7 @@ func TestTsInterfaceBuilderRegisterOverridesExisting(t *testing.T) {
 	replacement.AddProperty("id", "string", false)
 	builder.RegisterType(replacement)
 
-	got, ok := builder.QueryType("Item")
+	got, ok := builder.GetType("Item")
 	if !ok {
 		t.Fatalf("expected to find type after replacement")
 	}

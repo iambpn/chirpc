@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -14,11 +15,21 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
+type body struct {
+	Name string `json:"name"`
+	Age  int    `json:"age" tsOptional:"true"`
+}
+
+func (b *body) Validate() error {
+	return errors.New("test error")
+}
+
 func main() {
 	rpcRouter := chirpc.NewRPCRouter()
 
 	chirpc.AddGlobalMiddlewares(rpcRouter, middleware.Logger)
-	chirpc.AddHandler(rpcRouter, chirpc.GET, "/", GetHandler)
+	chirpc.AddHandler(rpcRouter, chirpc.GET, "/", GetHandler).BodyType(body{}).QueryType(body{})
+	chirpc.AddHandler(rpcRouter, chirpc.GET, "/{test}", GetHandler)
 
 	chirpc.RegisterErrorHandler(ErrorHandler)
 

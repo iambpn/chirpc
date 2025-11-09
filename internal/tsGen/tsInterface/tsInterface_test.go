@@ -48,7 +48,7 @@ func TestTsInterfaceGetPropertyError(t *testing.T) {
 
 	if _, err := ti.GetProperty("missing"); err == nil {
 		t.Fatalf("expected error for missing key, got nil")
-	} else if err.Error() != "key missing not found in body" {
+	} else if err.Error() != "key 'missing' not found in TsInterface" {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }

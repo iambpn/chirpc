@@ -231,7 +231,7 @@ func TestGetTypeCoversKinds(t *testing.T) {
 		}
 	}
 
-	if _, exists := gen.builder.QueryType("TsGen__NestedKind"); !exists {
+	if _, exists := gen.builder.GetType("TsGen__NestedKind"); !exists {
 		t.Fatalf("expected nested struct type to be registered")
 	}
 }
@@ -260,6 +260,84 @@ func TestBuilderStringFormatting(t *testing.T) {
 	if strings.Count(output, "interface") != 1 {
 		t.Fatalf("expected single interface in output, got %q", output)
 	}
+}
+
+func TestTsTagTypeAndOptionalOverride(t *testing.T) {
+	gen := New(tsopts.SetToLowerExportedField(true))
+
+	type TsTypeFixture struct {
+		Raw   int    `tsType:"CustomType"`
+		Maybe string `tsOptional:"true"`
+	}
+
+	if err := gen.AddValue(TsTypeFixture{}); err != nil {
+		t.Fatalf("AddValue returned error: %v", err)
+	}
+
+	inf, ok := gen.GetRegisteredTypes().Get("TsGen__TsTypeFixture")
+	if !ok {
+		t.Fatalf("interface not registered for TsTypeFixture")
+	}
+
+	assertProperty(t, inf, "raw", "CustomType", false)
+	assertProperty(t, inf, "maybe", "string", true)
+}
+
+func TestMapNumberKeyAndPtrSliceAndPtrMap(t *testing.T) {
+	gen := New(tsopts.SetToLowerExportedField(true))
+
+	type ComplexFixture struct {
+		MapNumber map[int]string
+		PtrSlice  *[]int
+		PtrMap    *map[int]nestedKind
+	}
+
+	if err := gen.AddValue(ComplexFixture{}); err != nil {
+		t.Fatalf("AddValue returned error: %v", err)
+	}
+
+	inf, ok := gen.GetRegisteredTypes().Get("TsGen__ComplexFixture")
+	if !ok {
+		t.Fatalf("interface not registered for ComplexFixture")
+	}
+
+	assertProperty(t, inf, "mapnumber", "{ [key: number]: string }", false)
+	assertProperty(t, inf, "ptrslice", "number[] | null", false)
+	assertProperty(t, inf, "ptrmap", "{ [key: number]: TsGen__NestedKind } | null", false)
+}
+
+func TestAddTypeRejectsPointerType(t *testing.T) {
+	gen := New()
+	ptrType := reflect.TypeOf(&struct{ A int }{})
+
+	if err := gen.AddType(ptrType); err == nil {
+		t.Fatalf("AddType should reject pointer types")
+	}
+}
+
+func TestNestedStructReuse(t *testing.T) {
+	gen := New(tsopts.SetToLowerExportedField(true))
+
+	type parent struct {
+		Left  nestedKind
+		Right nestedKind
+	}
+
+	if err := gen.AddValue(parent{}); err != nil {
+		t.Fatalf("AddValue returned error: %v", err)
+	}
+
+	types := gen.GetRegisteredTypes()
+	if count := countInterfaces(types); count != 2 {
+		t.Fatalf("expected 2 registered interfaces (parent + nested), got %d", count)
+	}
+
+	parentInf, ok := types.Get("TsGen__Parent")
+	if !ok {
+		t.Fatalf("parent interface not registered")
+	}
+	assertProperty(t, parentInf, "left", "TsGen__NestedKind", false)
+	assertProperty(t, parentInf, "right", "TsGen__NestedKind", false)
 }
 
 func countInterfaces(m *orderedmap.OrderedMap[string, *tsInterface.TsInterface]) int {

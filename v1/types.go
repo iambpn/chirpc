@@ -25,6 +25,7 @@ func (rh RequestHandler[T]) ServeHTTPWithErrorHandler(errorHandler ErrorHandlerT
 				return
 			}
 
+			// if error handler is not set, return 500
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

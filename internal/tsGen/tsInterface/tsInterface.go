@@ -43,7 +43,7 @@ func (t *TsInterface) GetProperty(key string) (*interfaceValue, error) {
 		return val, nil
 	}
 
-	return nil, fmt.Errorf("key %s not found in body", key)
+	return nil, fmt.Errorf("key '%s' not found in TsInterface", key)
 }
 
 func (t *TsInterface) IsPrimary() bool {

@@ -335,3 +335,61 @@ func TestRegisterErrorHandlerWrapsTypedResponse(t *testing.T) {
 		t.Fatalf("expected body to contain error message, got %q", string(bodyBytes))
 	}
 }
+
+func TestAddHandlerReturnsBodyQueryParamWithSchema(t *testing.T) {
+	r := NewRPCRouter()
+	bqp := AddHandler(r, GET, "/items/{id}", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
+	}))
+	if bqp == nil {
+		t.Fatal("expected BodyQueryParamType pointer, got nil")
+	}
+	if bqp.Schema == nil {
+		t.Fatal("expected Schema to be populated")
+	}
+}
+
+func TestMiddlewareOrderGlobalThenRoute(t *testing.T) {
+	r := NewRPCRouter()
+
+	AddGlobalMiddlewares(r, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Order", "global")
+			next.ServeHTTP(w, req)
+		})
+	})
+
+	AddHandler(r, GET, "/mw-order", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
+	}), func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Order", w.Header().Get("X-Order")+"-route")
+			next.ServeHTTP(w, req)
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/mw-order", nil)
+	rec := httptest.NewRecorder()
+	r.router.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("X-Order"); got != "global-route" {
+		t.Fatalf("expected header 'global-route', got %q", got)
+	}
+}
+
+func TestRegisterErrorHandlerSetsGlobalHandler(t *testing.T) {
+	defer func() { errorHandler = nil }()
+	if errorHandler != nil {
+		t.Fatal("expected initial global errorHandler to be nil")
+	}
+
+	RegisterErrorHandler(func(r *http.Request, err error) HttpResponse[string] {
+		return HttpResponse[string]{StatusCode: http.StatusBadRequest, Body: "handled"}
+	})
+
+	if errorHandler == nil {
+		t.Fatal("expected global errorHandler to be set")
+	}
+}
+
+

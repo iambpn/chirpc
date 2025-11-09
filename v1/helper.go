@@ -47,3 +47,29 @@ func isJSONMarshable(v reflect.Kind) bool {
 		return false
 	}
 }
+
+func parseURLSlug(url string) []string {
+	slugs := []string{}
+
+	slug := ""
+	bracketOpenCount := 0
+	for _, part := range url {
+		if part == '{' {
+			bracketOpenCount++
+			continue
+		}
+
+		if part == '}' && bracketOpenCount == 1 {
+			bracketOpenCount--
+			slugs = append(slugs, slug)
+			slug = ""
+			continue
+		}
+
+		if bracketOpenCount > 0 {
+			slug += string(part)
+		}
+	}
+
+	return slugs
+}

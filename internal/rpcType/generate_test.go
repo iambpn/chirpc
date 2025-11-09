@@ -72,7 +72,7 @@ func TestRegisterHandler_StoresSchemaInformation(t *testing.T) {
 		return nil, nil
 	}
 
-	if err := RegisterHandler("get", "/users", handler); err != nil {
+	if _, err := RegisterHandler("get", "/users", handler); err != nil {
 		t.Fatalf("unexpected error registering handler: %v", err)
 	}
 
@@ -98,7 +98,7 @@ func TestRegisterHandler_ErrorsOnNonFunction(t *testing.T) {
 	resetTypeRegistry()
 	t.Cleanup(resetTypeRegistry)
 
-	if err := RegisterHandler("post", "/invalid", 123); err == nil {
+	if _, err := RegisterHandler("post", "/invalid", 123); err == nil {
 		t.Fatalf("expected error when registering non-function handler")
 	}
 }
@@ -111,7 +111,7 @@ func TestConvertToTs_GeneratesSingleHandlerSchema(t *testing.T) {
 		return nil, nil
 	}
 
-	if err := RegisterHandler("get", "/status", handler); err != nil {
+	if _, err := RegisterHandler("get", "/status", handler); err != nil {
 		t.Fatalf("unexpected error registering handler: %v", err)
 	}
 
@@ -153,11 +153,11 @@ func TestConvertToTs_HandlesNestedTypesAcrossHandlers(t *testing.T) {
 		return nil, nil
 	}
 
-	if err := RegisterHandler("get", "/users/{id}", userHandler); err != nil {
+	if _, err := RegisterHandler("get", "/users/{id}", userHandler); err != nil {
 		t.Fatalf("registering user handler failed: %v", err)
 	}
 
-	if err := RegisterHandler("post", "/teams", teamHandler); err != nil {
+	if _, err := RegisterHandler("post", "/teams", teamHandler); err != nil {
 		t.Fatalf("registering team handler failed: %v", err)
 	}
 
@@ -181,7 +181,7 @@ func TestConvertToTs_HandlesNestedTypesAcrossHandlers(t *testing.T) {
 		}
 		export type ApiSchema = {
 			"GET": {
-				"/users/{id}": {
+				"/users/:id": {
 					response: RpcType__UserProfile;
 				};
 			};
@@ -195,3 +195,216 @@ func TestConvertToTs_HandlesNestedTypesAcrossHandlers(t *testing.T) {
 
 	VerifyTsTypes(t, out, expectedString)
 }
+
+func TestSetBodyType_SetsStructType(t *testing.T) {
+	resetTypeRegistry()
+	t.Cleanup(resetTypeRegistry)
+
+	handler := func(*http.Request) (*httpResponse[string], error) {
+		return nil, nil
+	}
+
+	schema, err := RegisterHandler("post", "/create", handler)
+	if err != nil {
+		t.Fatalf("unexpected error registering handler: %v", err)
+	}
+
+	// set body type using a value
+	SetBodyType(schema, Address{})
+
+	if schema.bodyType == nil {
+		t.Fatalf("expected bodyType to be set")
+	}
+
+	expected := reflect.TypeOf(Address{})
+	if schema.bodyType != expected {
+		t.Fatalf("expected bodyType %v, got %v", expected, schema.bodyType)
+	}
+}
+
+func TestSetBodyType_AcceptsPointerToStruct(t *testing.T) {
+	resetTypeRegistry()
+	t.Cleanup(resetTypeRegistry)
+
+	handler := func(*http.Request) (*httpResponse[string], error) { return nil, nil }
+
+	schema, err := RegisterHandler("post", "/create", handler)
+	if err != nil {
+		t.Fatalf("unexpected error registering handler: %v", err)
+	}
+
+	// set body type using a pointer
+	SetBodyType(schema, &Address{})
+
+	if schema.bodyType == nil {
+		t.Fatalf("expected bodyType to be set from pointer")
+	}
+
+	expected := reflect.TypeOf(Address{})
+	if schema.bodyType != expected {
+		t.Fatalf("expected bodyType %v, got %v", expected, schema.bodyType)
+	}
+}
+
+func TestSetBodyType_IgnoresNonStruct(t *testing.T) {
+	resetTypeRegistry()
+	t.Cleanup(resetTypeRegistry)
+
+	handler := func(*http.Request) (*httpResponse[string], error) { return nil, nil }
+
+	schema, err := RegisterHandler("post", "/create", handler)
+	if err != nil {
+		t.Fatalf("unexpected error registering handler: %v", err)
+	}
+
+	// attempt to set a non-struct body; should be ignored
+	SetBodyType(schema, 123)
+
+	if schema.bodyType != nil {
+		t.Fatalf("expected bodyType to remain nil when non-struct provided")
+	}
+}
+
+func TestSetQueryType_SetsStructType(t *testing.T) {
+	resetTypeRegistry()
+	t.Cleanup(resetTypeRegistry)
+
+	handler := func(*http.Request) (*httpResponse[string], error) { return nil, nil }
+
+	schema, err := RegisterHandler("get", "/search", handler)
+	if err != nil {
+		t.Fatalf("unexpected error registering handler: %v", err)
+	}
+
+	// set query type using a value
+	SetQueryType(schema, UserProfile{})
+
+	if schema.queryType == nil {
+		t.Fatalf("expected queryType to be set")
+	}
+
+	expected := reflect.TypeOf(UserProfile{})
+	if schema.queryType != expected {
+		t.Fatalf("expected queryType %v, got %v", expected, schema.queryType)
+	}
+}
+
+func TestSetQueryType_AcceptsPointerToStruct(t *testing.T) {
+	resetTypeRegistry()
+	t.Cleanup(resetTypeRegistry)
+
+	handler := func(*http.Request) (*httpResponse[string], error) { return nil, nil }
+
+	schema, err := RegisterHandler("get", "/search", handler)
+	if err != nil {
+		t.Fatalf("unexpected error registering handler: %v", err)
+	}
+
+	// set query type using a pointer
+	SetQueryType(schema, &UserProfile{})
+
+	if schema.queryType == nil {
+		t.Fatalf("expected queryType to be set from pointer")
+	}
+
+	expected := reflect.TypeOf(UserProfile{})
+	if schema.queryType != expected {
+		t.Fatalf("expected queryType %v, got %v", expected, schema.queryType)
+	}
+}
+
+func TestSetQueryType_IgnoresNonStruct(t *testing.T) {
+	resetTypeRegistry()
+	t.Cleanup(resetTypeRegistry)
+
+	handler := func(*http.Request) (*httpResponse[string], error) { return nil, nil }
+
+	schema, err := RegisterHandler("get", "/search", handler)
+	if err != nil {
+		t.Fatalf("unexpected error registering handler: %v", err)
+	}
+
+	// attempt to set a non-struct query; should be ignored
+	SetQueryType(schema, "not a struct")
+
+	if schema.queryType != nil {
+		t.Fatalf("expected queryType to remain nil when non-struct provided")
+	}
+}
+
+func TestSliceToTsInf_EmptyAndNonEmpty(t *testing.T) {
+	t.Run("empty returns never", func(t *testing.T) {
+		got := sliceToTsInf([]string{})
+		if got != "never" {
+			t.Fatalf("expected never, got %q", got)
+		}
+	})
+
+	t.Run("multiple slugs forms interface", func(t *testing.T) {
+		got := sliceToTsInf([]string{"id", "postId"})
+		expected := `{ "id": string;"postId": string; }`
+		if got != expected {
+			t.Fatalf("expected %q, got %q", expected, got)
+		}
+	})
+}
+
+func TestSetParamsType_SetsParamsInterfaceString(t *testing.T) {
+	s := &TsGoSchema{}
+	SetParamsType(s, []string{"userId", "teamId"})
+
+	if s.paramsType == "" {
+		t.Fatalf("expected paramsType to be set")
+	}
+
+	expected := `{ "userId": string;"teamId": string; }`
+	if s.paramsType != expected {
+		t.Fatalf("expected paramsType %q, got %q", expected, s.paramsType)
+	}
+}
+
+type CreateReq struct {
+	Name   string
+	TagIds []int
+}
+type SearchQ struct {
+	Filter string
+	Limit  int
+}
+
+func TestConvertToTs_IncludesBodyQueryAndParam(t *testing.T) {
+	resetTypeRegistry()
+	t.Cleanup(resetTypeRegistry)
+
+	handler := func(*http.Request) (*httpResponse[string], error) { return nil, nil }
+
+	schema, err := RegisterHandler("post", "/users/{userId}", handler)
+	if err != nil {
+		t.Fatalf("unexpected error registering handler: %v", err)
+	}
+
+	SetBodyType(schema, CreateReq{})
+	SetQueryType(schema, SearchQ{})
+	SetParamsType(schema, []string{"userId"})
+
+	out, err := ConvertToTs()
+	if err != nil {
+		t.Fatalf("ConvertToTs returned error: %v", err)
+	}
+
+	expected := `
+		export type ApiSchema = {
+			"POST": {
+				"/users/:userId": {
+					params: { "userId": string; };
+					query?: { Filter:string; Limit:number; };
+					body: { Name:string; TagIds:number[]; };
+					response: string;
+				};
+			};
+		};
+	`
+	VerifyTsTypes(t, out, expected)
+}
+
+

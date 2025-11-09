@@ -3,6 +3,19 @@ import type { ApiSchema } from "../../apiSchema.js";
 
 export const api = new TypedAxios<ApiSchema>();
 
-api.request("GET", "/", {});
+api.request("GET", "/", {
+  body: {
+    name: "John Doe",
+  },
+});
 
-api.GET("/", {});
+api.GET("/", {
+  body: {
+    age: 25,
+    name: "John Doe",
+  },
+});
+
+api.GET("/:test", {
+  params: { test: "example" },
+});

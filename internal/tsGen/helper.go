@@ -10,6 +10,11 @@ import (
 )
 
 func getHeaderName(valType reflect.Type, opt tsopts.TsGenOpts) string {
+	// dereference pointer types
+	for valType.Kind() == reflect.Ptr {
+		valType = valType.Elem()
+	}
+
 	if !opt[tsopts.AddHeaderToInterface] {
 		return ""
 	}

@@ -47,7 +47,7 @@ func (t *TsGen) GetType(field reflect.StructField) string {
 		}
 
 		headerName := getHeaderName(field.Type, t.opt)
-		if _, exists := t.builder.QueryType(headerName); !exists {
+		if _, exists := t.builder.GetType(headerName); !exists {
 			nestedTsInf := t.buildTsStruct(field.Type, "", tsopts.SetAddHeaderToInterface(true))
 			nestedTsInf.SetPrimary(false)
 			t.builder.RegisterType(nestedTsInf)
@@ -143,7 +143,7 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 		headerName = getHeaderName(valType, opt)
 	}
 	// check if the type has already been generated
-	if tsInf, exists := t.builder.QueryType(headerName); exists {
+	if tsInf, exists := t.builder.GetType(headerName); exists {
 		return tsInf
 	}
 
@@ -174,7 +174,7 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 			}
 
 			// check if the nested struct type has already been generated
-			if _, exists := t.builder.QueryType(nestedHeaderName); exists {
+			if _, exists := t.builder.GetType(nestedHeaderName); exists {
 				formattedKey := getTagKey(structField)
 
 				if formattedKey == "" {

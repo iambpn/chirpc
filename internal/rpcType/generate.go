@@ -3,6 +3,7 @@ package rpcType
 import (
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 
@@ -16,11 +17,11 @@ type TsGoSchema struct {
 	url        string
 	returnType reflect.Type
 	bodyType   reflect.Type
-	paramsType reflect.Type
+	paramsType string
 	queryType  reflect.Type
 }
 
-var types = []TsGoSchema{}
+var types = []*TsGoSchema{}
 
 func extractReturnType(typeVal reflect.Type) (reflect.Type, error) {
 	if typeVal.Kind() == reflect.Pointer {
@@ -48,21 +49,57 @@ func extractReturnType(typeVal reflect.Type) (reflect.Type, error) {
 	return retType, nil
 }
 
-func RegisterHandler(method, url string, fnVal any) error {
+func RegisterHandler(method, url string, fnVal any) (*TsGoSchema, error) {
 	typeVal := reflect.TypeOf(fnVal)
 
 	retType, err := extractReturnType(typeVal)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	types = append(types, TsGoSchema{
-		returnType: retType,
+	schema := TsGoSchema{
 		method:     method,
 		url:        url,
-	})
+		returnType: retType,
+	}
 
-	return nil
+	types = append(types, &schema)
+
+	return &schema, nil
+}
+
+func SetBodyType(schema *TsGoSchema, body any) {
+	bodyType := reflect.TypeOf(body)
+
+	if bodyType.Kind() == reflect.Pointer {
+		bodyType = bodyType.Elem()
+	}
+
+	if bodyType.Kind() != reflect.Struct {
+		fmt.Fprintf(os.Stderr, "Warning: body type must be a struct, got %s, skipping setting body type\n", bodyType.String())
+		return
+	}
+
+	schema.bodyType = bodyType
+}
+
+func SetQueryType(schema *TsGoSchema, query any) {
+	queryType := reflect.TypeOf(query)
+
+	if queryType.Kind() == reflect.Pointer {
+		queryType = queryType.Elem()
+	}
+
+	if queryType.Kind() != reflect.Struct {
+		fmt.Fprintf(os.Stderr, "Warning: query type is not a struct (got %s), skipping setting query type\n", queryType.String())
+		return
+	}
+
+	schema.queryType = queryType
+}
+
+func SetParamsType(schema *TsGoSchema, slugs []string) {
+	schema.paramsType = sliceToTsInf(slugs)
 }
 
 func ConvertToTs() (string, error) {
@@ -71,22 +108,44 @@ func ConvertToTs() (string, error) {
 
 	for _, t := range types {
 		tsgen := tsGen.New()
+
+		// add return type to tsgen
 		err := tsgen.AddTypeWithName(t.returnType, "returnType", tsopts.TsGenOpts{})
 
 		if err != nil {
 			return "", err
 		}
 
+		// add body type to tsgen if exists
+		if t.bodyType != nil {
+			err = tsgen.AddTypeWithName(t.bodyType, "bodyType", tsopts.TsGenOpts{})
+
+			if err != nil {
+				return "", err
+			}
+		}
+
+		// add query type to tsgen if exists
+		if t.queryType != nil {
+			err = tsgen.AddTypeWithName(t.queryType, "queryType", tsopts.TsGenOpts{})
+			if err != nil {
+				return "", err
+			}
+		}
+
+		// fetched all registered types so we can check if body, param, query types exist
 		registeredTypes := tsgen.GetRegisteredTypes()
 
 		schema := RpcSchema{}
 
 		for el := registeredTypes.Front(); el != nil; el = el.Next() {
-			name := el.Key
+			name := el.Key // headerName
 			tsInf := el.Value
 			switch name {
 			case "returnType":
 				{
+					// For return type: tsInf is the ts representation of HttpResponse[T]
+					// see above registerHandler function
 					body, err := tsInf.GetProperty("Body")
 
 					if err != nil {
@@ -94,6 +153,27 @@ func ConvertToTs() (string, error) {
 					}
 
 					schema.Response = body.Value
+				}
+			case "bodyType":
+				{
+					// for body type: tsInf is the ts representation of the struct
+					// see above setBodyType function
+
+					tsInf.AddInterfaceName("")
+
+					body := tsInf.String()
+					schema.Body = body
+				}
+			case "queryType":
+				{
+					// for query type: tsInf is the ts representation of the struct
+					// see above setQueryType function
+
+					// removing header name to build anonymous interface
+					tsInf.AddInterfaceName("")
+
+					query := tsInf.String()
+					schema.Query = query
 				}
 			default:
 				{
@@ -104,7 +184,12 @@ func ConvertToTs() (string, error) {
 			}
 		}
 
-		rt.AddType(t.method, t.url, schema)
+		// set params
+		if t.paramsType != "" {
+			schema.Param = t.paramsType
+		}
+
+		rt.AddRpcSchema(t.method, t.url, schema)
 	}
 
 	tsTypes := []string{}
@@ -113,4 +198,17 @@ func ConvertToTs() (string, error) {
 	}
 
 	return fmt.Sprintf("%s\n%s", strings.Join(tsTypes, "\n"), rt.String()), nil
+}
+
+func sliceToTsInf(slice []string) string {
+	if len(slice) == 0 {
+		return "never"
+	}
+
+	inf := ""
+	for _, s := range slice {
+		inf += fmt.Sprintf(`"%s": string;`, s)
+	}
+
+	return fmt.Sprintf("{ %s }", inf)
 }

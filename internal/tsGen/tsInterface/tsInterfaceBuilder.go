@@ -15,7 +15,8 @@ func (t *TsInterfaceBuilder) RegisterType(tsType *TsInterface) {
 	t.types.Set(header, tsType)
 }
 
-func (t *TsInterfaceBuilder) QueryType(headerName string) (*TsInterface, bool) {
+// Get TsInterface by its header name
+func (t *TsInterfaceBuilder) GetType(headerName string) (*TsInterface, bool) {
 	return t.types.Get(headerName)
 }
 

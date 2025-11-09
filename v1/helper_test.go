@@ -104,34 +104,78 @@ func TestSendResponse_WritesInternalServerErrorOnMarshalFailure(t *testing.T) {
 	}
 }
 
-func TestIsJSONMarshable(t *testing.T) {
-	t.Helper()
-
+func TestParseURLSlugSingle(t *testing.T) {
 	cases := []struct {
-		kind    reflect.Kind
-		allowed bool
+		in   string
+		want []string
 	}{
-		{reflect.Struct, true},
-		{reflect.Map, true},
-		{reflect.Slice, true},
-		{reflect.Array, true},
-		{reflect.String, true},
-		{reflect.Int64, true},
-		{reflect.Uint8, true},
-		{reflect.Float32, true},
-		{reflect.Bool, true},
-		{reflect.Pointer, true},
-		{reflect.Interface, true},
-		{reflect.Func, false},
-		{reflect.Chan, false},
-		{reflect.UnsafePointer, false},
+		{"/users/{id}", []string{"id"}},
+		{"{one}", []string{"one"}},
+		{"/no/slugs/here", []string{}},
+		{"", []string{}},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.kind.String(), func(t *testing.T) {
-			if got := isJSONMarshable(tc.kind); got != tc.allowed {
-				t.Fatalf("expected %v for kind %s, got %v", tc.allowed, tc.kind, got)
+	for _, c := range cases {
+		got := parseURLSlug(c.in)
+		if len(got) != len(c.want) {
+			t.Fatalf("parseURLSlug(%q) len = %d, want %d (%v)", c.in, len(got), len(c.want), got)
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Fatalf("parseURLSlug(%q)[%d] = %q, want %q", c.in, i, got[i], c.want[i])
 			}
-		})
+		}
+	}
+}
+
+func TestParseURLSlugMultiple(t *testing.T) {
+	got := parseURLSlug("/{user}/{id}")
+	if len(got) != 2 || got[0] != "user" || got[1] != "id" {
+		t.Fatalf("parseURLSlug multi failed: got %v, want [user id]", got)
+	}
+}
+
+func TestIsJSONMarshable(t *testing.T) {
+	type sample struct{ X int }
+	var (
+		sampleVal sample
+		intVal    int
+		strVal    string
+		mapVal    = map[string]int{}
+		sliceVal  = []string{}
+		arrayVal  = [2]int{}
+		boolVal   = true
+		floatVal  = 3.14
+		ifaceVal  interface{} = 5
+		ptrVal    = &sampleVal
+		chanVal   = make(chan int)
+		funcVal   = func() {}
+		complexVal complex64 = 1 + 2i
+	)
+
+	cases := []struct {
+		val  any
+		want bool
+	}{
+		{sampleVal, true},
+		{mapVal, true},
+		{sliceVal, true},
+		{arrayVal, true},
+		{strVal, true},
+		{intVal, true},
+		{boolVal, true},
+		{floatVal, true},
+		{ifaceVal, true},
+		{ptrVal, true},
+		{chanVal, false},
+		{funcVal, false},
+		{complexVal, false},
+	}
+
+	for _, c := range cases {
+		kind := reflect.TypeOf(c.val).Kind()
+		if got := isJSONMarshable(kind); got != c.want {
+			t.Fatalf("isJSONMarshable(%v) = %v, want %v", kind, got, c.want)
+		}
 	}
 }

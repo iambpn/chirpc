@@ -36,16 +36,26 @@ func AddGlobalMiddlewares(r *RPCRouter, middlewares ...MiddlewareType) {
 	r.router.Use(middlewares...)
 }
 
-func AddHandler[T any](r *RPCRouter, method HttpMethods, path string, handler RequestHandler[T], middlewares ...MiddlewareType) {
+func AddHandler[R any](r *RPCRouter, method HttpMethods, path string, handler RequestHandler[R], middlewares ...MiddlewareType) *rpcType.BodyQueryParamType {
+	bodyQueryParam := &rpcType.BodyQueryParamType{}
+
 	// register handler type to generate ts types
-	err := rpcType.RegisterHandler(string(method), path, handler)
+	schema, err := rpcType.RegisterHandler(string(method), path, handler)
 
 	if err != nil {
-		fmt.Println("Error registering handler:", err)
-		return
+		fmt.Println("Error while registering handler:", err)
+		return bodyQueryParam
 	}
 
+	bodyQueryParam.Schema = schema
+
+	// get slugs from path
+	slugs := parseURLSlug(path)
+	bodyQueryParam.Params(slugs)
+
 	r.router.With(middlewares...).Method(string(method), path, handler.ServeHTTPWithErrorHandler(errorHandler))
+
+	return bodyQueryParam
 }
 
 func Route(r *RPCRouter, path string, fn func(r *RPCRouter), middlewares ...MiddlewareType) {
@@ -78,9 +88,9 @@ func NotFound(r *RPCRouter, fn http.HandlerFunc) {
 	r.router.NotFound(fn)
 }
 
-func RegisterErrorHandler[T any](handler ErrorHandlerType[T]) {
+func RegisterErrorHandler[R any](handler ErrorHandlerType[R]) {
 	// register handler type to generate ts types
-	err := rpcType.RegisterHandler("ERROR_HANDLER", "/", handler)
+	_, err := rpcType.RegisterHandler("ERROR_HANDLER", "/", handler)
 
 	if err != nil {
 		fmt.Println("Error registering error handler:", err)
