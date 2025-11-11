@@ -37,3 +37,24 @@ func parseURLSlug(url string) []string {
 
 	return slugs
 }
+
+func mergePaths(basePath, relativePath string) string {
+	if basePath == "" {
+		return relativePath
+	}
+	if relativePath == "" {
+		return basePath
+	}
+
+	hasBaseSlash := basePath[len(basePath)-1] == '/'
+	hasRelativeSlash := relativePath[0] == '/'
+
+	switch {
+	case hasBaseSlash && hasRelativeSlash:
+		return basePath + relativePath[1:]
+	case !hasBaseSlash && !hasRelativeSlash:
+		return basePath + "/" + relativePath
+	default:
+		return basePath + relativePath
+	}
+}

@@ -407,4 +407,69 @@ func TestConvertToTs_IncludesBodyQueryAndParam(t *testing.T) {
 	VerifyTsTypes(t, out, expected)
 }
 
+func TestRegisterHandler_AppendsMultipleSchemas(t *testing.T) {
+	resetTypeRegistry()
+	t.Cleanup(resetTypeRegistry)
 
+	handlerA := func(*http.Request) (*httpResponse[string], error) { return nil, nil }
+	handlerB := func(*http.Request) (*httpResponse[int], error) { return nil, nil }
+
+	if _, err := RegisterHandler("get", "/alpha", handlerA); err != nil {
+		t.Fatalf("unexpected error registering handlerA: %v", err)
+	}
+	if _, err := RegisterHandler("post", "/beta", handlerB); err != nil {
+		t.Fatalf("unexpected error registering handlerB: %v", err)
+	}
+
+	if len(types) != 2 {
+		t.Fatalf("expected 2 registered handlers, got %d", len(types))
+	}
+
+	if types[0].method != "get" || types[0].url != "/alpha" {
+		t.Fatalf("unexpected first schema contents: method=%s url=%s", types[0].method, types[0].url)
+	}
+	if types[1].method != "post" || types[1].url != "/beta" {
+		t.Fatalf("unexpected second schema contents: method=%s url=%s", types[1].method, types[1].url)
+	}
+}
+
+func TestRegisterHandler_ReturnsStoredSchemaReference(t *testing.T) {
+	resetTypeRegistry()
+	t.Cleanup(resetTypeRegistry)
+
+	handler := func(*http.Request) (*httpResponse[string], error) { return nil, nil }
+
+	schema, err := RegisterHandler("put", "/gamma", handler)
+	if err != nil {
+		t.Fatalf("unexpected error registering handler: %v", err)
+	}
+
+	if len(types) != 1 {
+		t.Fatalf("expected 1 registered handler, got %d", len(types))
+	}
+
+	if schema != types[0] {
+		t.Fatalf("returned schema pointer should match stored schema")
+	}
+
+	SetBodyType(schema, Address{})
+
+	if types[0].bodyType == nil || types[0].bodyType != reflect.TypeOf(Address{}) {
+		t.Fatalf("expected bodyType to propagate to stored schema")
+	}
+}
+
+func TestRegisterHandler_PropagatesBuildErrors(t *testing.T) {
+	resetTypeRegistry()
+	t.Cleanup(resetTypeRegistry)
+
+	invalid := func() {}
+
+	if _, err := RegisterHandler("delete", "/delta", invalid); err == nil {
+		t.Fatalf("expected error registering handler without return value")
+	}
+
+	if len(types) != 0 {
+		t.Fatalf("expected no handlers registered after error, got %d", len(types))
+	}
+}

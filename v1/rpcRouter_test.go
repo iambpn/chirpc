@@ -150,7 +150,7 @@ func TestRouteMountsSubRouterWithMiddlewares(t *testing.T) {
 
 func TestMountAttachesSubRouter(t *testing.T) {
 	root := NewRPCRouter()
-	sub := NewRPCRouter()
+	sub := NewRPCSubRouter()
 
 	AddHandler(sub, GET, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
@@ -392,4 +392,87 @@ func TestRegisterErrorHandlerSetsGlobalHandler(t *testing.T) {
 	}
 }
 
+func TestGenerateRpcTypesWithRouteMountGroup(t *testing.T) {
+	path := "apiSchemaRouteMountGroup.ts"
+	t.Cleanup(func() { _ = os.Remove(path) })
 
+	r := NewRPCRouter()
+
+	// Using Route
+	Route(r, "/api", func(sub *RPCRouter) {
+		AddHandler(sub, GET, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+			return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "pong"}, nil
+		}))
+	})
+
+	// Using Mount
+	sub := NewRPCSubRouter()
+	AddHandler(sub, GET, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
+	}))
+	Mount(r, "/prefix", sub)
+
+	// Using Group
+	Group(r, func(sub *RPCRouter) {
+		AddHandler(sub, GET, "/group", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+			return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "group"}, nil
+		}))
+	})
+
+	if err := GenerateRpcTypes(path); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file to exist: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "type ApiSchema") {
+		t.Fatalf("expected generated schema to contain type definition")
+	}
+	if !strings.Contains(content, "/api/ping") {
+		t.Fatalf("expected schema to contain /api/ping route")
+	}
+	if !strings.Contains(content, "/prefix/child") {
+		t.Fatalf("expected schema to contain /prefix/child route")
+	}
+	if !strings.Contains(content, "/group") {
+		t.Fatalf("expected schema to contain /group route")
+	}
+}
+
+type fakeRouter struct{}
+func (f *fakeRouter) isRpcRouter() bool { return true }
+func TestAddHandlerWithUnknownRouterType(t *testing.T) {
+	fr := &fakeRouter{}
+	bqp := AddHandler(fr, GET, "/unknown", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		return &HttpResponse[string]{StatusCode: http.StatusNoContent}, nil
+	}))
+
+	if bqp == nil {
+		t.Fatal("expected BodyQueryParamType pointer, got nil")
+	}
+	if bqp.Schema != nil {
+		t.Fatalf("expected Schema to be nil for unknown router type, got %v", bqp.Schema)
+	}
+}
+
+func TestAddHandlerOnSubRouterRecordsSchema(t *testing.T) {
+	sub := NewRPCSubRouter()
+	bqp := AddHandler(sub, GET, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
+	}))
+
+	if len(sub.subRoutes) != 1 {
+		t.Fatalf("expected one schema recorded, got %d", len(sub.subRoutes))
+	}
+	schema := sub.subRoutes[0]
+	if schema.URL() != "/child" {
+		t.Fatalf("expected schema URL %q, got %q", "/child", schema.URL())
+	}
+	if bqp == nil || bqp.Schema != schema {
+		t.Fatalf("expected BodyQueryParamType to reference recorded schema, got %v", bqp.Schema)
+	}
+}

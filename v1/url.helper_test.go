@@ -32,3 +32,29 @@ func TestParseURLSlugMultiple(t *testing.T) {
 		t.Fatalf("parseURLSlug multi failed: got %v, want [user id]", got)
 	}
 }
+
+func TestMergePaths(t *testing.T) {
+	cases := []struct {
+		base     string
+		relative string
+		want     string
+	}{
+		{"", "/foo", "/foo"},
+		{"/foo", "", "/foo"},
+		{"/foo/", "/bar", "/foo/bar"},
+		{"/foo", "bar", "/foo/bar"},
+		{"/foo/", "/bar/", "/foo/bar/"},
+		{"/foo", "/bar", "/foo/bar"},
+		{"/foo/", "bar", "/foo/bar"},
+		{"/foo", "bar/", "/foo/bar/"},
+		{"foo", "bar", "foo/bar"},
+		{"foo/", "/bar", "foo/bar"},
+	}
+
+	for _, c := range cases {
+		got := mergePaths(c.base, c.relative)
+		if got != c.want {
+			t.Errorf("mergePaths(%q, %q) = %q, want %q", c.base, c.relative, got, c.want)
+		}
+	}
+}

@@ -27,6 +27,14 @@ type TsGoSchema struct {
 	queryType  reflect.Type
 }
 
+func (t *TsGoSchema) SetUrl(url string) {
+	t.url = url
+}
+
+func (t *TsGoSchema) URL() string {
+	return t.url
+}
+
 // types holds all registered TsGoSchema entries pending TypeScript conversion.
 var types = []*TsGoSchema{}
 
@@ -58,9 +66,11 @@ func extractReturnType(typeVal reflect.Type) (reflect.Type, error) {
 	return retType, nil
 }
 
-// RegisterHandler registers an RPC handler with its method, URL, and return type.
-// It returns a TsGoSchema for optional body, query, and params enrichment.
-func RegisterHandler(method, url string, fnVal any) (*TsGoSchema, error) {
+// BuildTsGoSchema constructs a TsGoSchema from the given HTTP method, URL, and handler function.
+// It extracts the return type from the handler and initializes the schema.
+// It does not add rpc schema for type generation
+// Returns an error if the handler is not a valid function or lacks a return type.
+func BuildTsGoSchema(method, url string, fnVal any) (*TsGoSchema, error) {
 	typeVal := reflect.TypeOf(fnVal)
 
 	retType, err := extractReturnType(typeVal)
@@ -74,9 +84,32 @@ func RegisterHandler(method, url string, fnVal any) (*TsGoSchema, error) {
 		returnType: retType,
 	}
 
-	types = append(types, &schema)
-
 	return &schema, nil
+}
+
+// RegisterHandlers adds multiple TsGoSchema handler entries to the global types slice for TypeScript generation.
+// If the input slice is empty, the function does nothing.
+func RegisterHandlers(schemas []*TsGoSchema) {
+	if len(schemas) == 0 {
+		return
+	}
+
+	// add to global types slice for type generation
+	types = append(types, schemas...)
+}
+
+// RegisterHandler registers an rpc schema for type generation with its method, URL, and return type.
+// It returns a TsGoSchema for optional body, query, and params enrichment.
+func RegisterHandler(method, url string, fnVal any) (*TsGoSchema, error) {
+	schema, err := BuildTsGoSchema(method, url, fnVal)
+
+	if err != nil {
+		return nil, err
+	}
+
+	types = append(types, schema)
+
+	return schema, nil
 }
 
 // SetBodyType assigns a struct type (value or pointer) as the request body type.
