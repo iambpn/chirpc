@@ -24,14 +24,17 @@ type TsGen struct {
 	builder *tsInterface.TsInterfaceBuilder
 }
 
-// structTagKey is the struct tag used to specify the TypeScript property name.
+// structTagKey is the struct tag used to override the TypeScript property name.
 const structTagKey = "tsKey"
 
-// structTagType is the struct tag used to specify the TypeScript type.
+// structTagType is the struct tag used to override the TypeScript type.
 const structTagType = "tsType"
 
 // structTagOptional is the struct tag used to specify if the TypeScript property is optional.
 const structTagOptional = "tsOptional"
+
+// structTagOmit is the struct tag used to ignore a field in TypeScript generation.
+const structTagOmit = "tsOmit"
 
 // GetType returns the TypeScript type string for a given Go struct field.
 func (t *TsGen) GetType(field reflect.StructField) string {
@@ -46,7 +49,7 @@ func (t *TsGen) GetType(field reflect.StructField) string {
 		return "string"
 	case reflect.Slice, reflect.Array:
 		elemType := t.GetType(reflect.StructField{Type: field.Type.Elem()})
-		return elemType + "[]"
+		return fmt.Sprintf("(%s)[]", elemType)
 	case reflect.Map:
 		keyType := t.GetType(reflect.StructField{Type: field.Type.Key()})
 		valueType := t.GetType(reflect.StructField{Type: field.Type.Elem()})
@@ -177,6 +180,11 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 		// check if the field is not exported
 		// pkgPath is non-empty for unexported fields
 		if structField.PkgPath != "" {
+			continue
+		}
+
+		// if field is marked to be omitted skip it
+		if isFieldOmitted(structField) {
 			continue
 		}
 

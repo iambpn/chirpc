@@ -121,3 +121,21 @@ func isFieldOptional(field reflect.StructField) bool {
 
 	return false
 }
+
+func isFieldOmitted(field reflect.StructField) bool {
+	// check for json tag first
+	if jsonTag, exists := field.Tag.Lookup("json"); exists {
+		if strings.TrimSpace(jsonTag) == "-" {
+			return true
+		}
+	}
+
+	// then check for tsIgnore tag
+	if ignore, exists := field.Tag.Lookup(structTagOmit); exists {
+		if strings.ToLower(ignore) == "true" {
+			return true
+		}
+	}
+
+	return false
+}

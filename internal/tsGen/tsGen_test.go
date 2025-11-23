@@ -98,7 +98,7 @@ func TestAddValueWithNameUsesExplicitHeader(t *testing.T) {
 func TestRegisterStructWithTags(t *testing.T) {
 	gen := New(tsopts.SetToLowercaseExportedField(true))
 
-	if err := gen.AddValue(profileFixture{}); err != nil {
+	if err := gen.AddValue(profileFixture{hidden: "secret"}); err != nil {
 		t.Fatalf("AddValue returned error: %v", err)
 	}
 
@@ -120,8 +120,8 @@ func TestRegisterStructWithTags(t *testing.T) {
 	assertProperty(t, profileInf, "id", "number", false)
 	assertProperty(t, profileInf, "fullName", "string", false)
 	assertProperty(t, profileInf, "age", "number | null", false)
-	assertProperty(t, profileInf, "emails", "string[]", false)
-	assertProperty(t, profileInf, "scores", "number[]", false)
+	assertProperty(t, profileInf, "emails", "(string)[]", false)
+	assertProperty(t, profileInf, "scores", "(number)[]", false)
 	assertProperty(t, profileInf, "meta", "{ [key: string]: boolean }", false)
 	assertProperty(t, profileInf, "address", "TsGen__AddressFixture", false)
 	assertProperty(t, profileInf, "residence", "TsGen__AddressFixture | null", false)
@@ -206,8 +206,8 @@ func TestGetTypeCoversKinds(t *testing.T) {
 		"Uint":       "number",
 		"Float":      "number",
 		"String":     "string",
-		"Slice":      "number[]",
-		"Array":      "number[]",
+		"Slice":      "(number)[]",
+		"Array":      "(number)[]",
 		"Map":        "{ [key: string]: TsGen__NestedKind }",
 		"Nested":     "TsGen__NestedKind",
 		"Pointer":    "TsGen__NestedKind | null",
@@ -283,6 +283,35 @@ func TestTsTagTypeAndOptionalOverride(t *testing.T) {
 	assertProperty(t, inf, "maybe", "string", true)
 }
 
+func TestFieldOmissionTags(t *testing.T) {
+	gen := New(tsopts.SetToLowercaseExportedField(true))
+
+	type omitFixture struct {
+		Visible string
+		Ignored string `json:"-"`
+		Hidden  string `tsOmit:"true"`
+	}
+
+	if err := gen.AddValue(omitFixture{}); err != nil {
+		t.Fatalf("AddValue returned error: %v", err)
+	}
+
+	inf, ok := gen.GetRegisteredTypes().Get("TsGen__OmitFixture")
+	if !ok {
+		t.Fatalf("interface not registered for omitFixture")
+	}
+
+	assertProperty(t, inf, "visible", "string", false)
+
+	if _, err := inf.GetProperty("ignored"); err == nil {
+		t.Fatalf("json:\"-\" field should not be included in interface")
+	}
+
+	if _, err := inf.GetProperty("hidden"); err == nil {
+		t.Fatalf("tsOmit tagged field should not be included in interface")
+	}
+}
+
 func TestMapNumberKeyAndPtrSliceAndPtrMap(t *testing.T) {
 	gen := New(tsopts.SetToLowercaseExportedField(true))
 
@@ -302,7 +331,7 @@ func TestMapNumberKeyAndPtrSliceAndPtrMap(t *testing.T) {
 	}
 
 	assertProperty(t, inf, "mapnumber", "{ [key: number]: string }", false)
-	assertProperty(t, inf, "ptrslice", "number[] | null", false)
+	assertProperty(t, inf, "ptrslice", "(number)[] | null", false)
 	assertProperty(t, inf, "ptrmap", "{ [key: number]: TsGen__NestedKind } | null", false)
 }
 

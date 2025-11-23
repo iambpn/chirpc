@@ -3,16 +3,17 @@ package chirpc
 import "net/http"
 
 // type alias for http methods
+// used for defining allowed HTTP methods in RPC routes
 type HttpMethods = string
 
 const (
-	GET     HttpMethods = http.MethodGet
-	POST    HttpMethods = http.MethodPost
-	PUT     HttpMethods = http.MethodPut
-	DELETE  HttpMethods = http.MethodDelete
-	PATCH   HttpMethods = http.MethodPatch
-	OPTIONS HttpMethods = http.MethodOptions
-	HEAD    HttpMethods = http.MethodHead
-	TRACE   HttpMethods = http.MethodTrace
-	CONNECT HttpMethods = http.MethodConnect
+	MethodGet     HttpMethods = http.MethodGet
+	MethodPost    HttpMethods = http.MethodPost
+	MethodPut     HttpMethods = http.MethodPut
+	MethodDelete  HttpMethods = http.MethodDelete
+	MethodPatch   HttpMethods = http.MethodPatch
+	MethodOptions HttpMethods = http.MethodOptions
+	MethodHead    HttpMethods = http.MethodHead
+	MethodTrace   HttpMethods = http.MethodTrace
+	MethodConnect HttpMethods = http.MethodConnect
 )

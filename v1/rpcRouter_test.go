@@ -26,7 +26,7 @@ func TestNewRPCRouterCreatesChiMux(t *testing.T) {
 func TestGetHttpServerSharesRouter(t *testing.T) {
 	r := NewRPCRouter()
 
-	AddHandler(r, GET, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, MethodGet, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "pong"}, nil
 	}))
 
@@ -58,7 +58,7 @@ func TestAddGlobalMiddlewaresAreApplied(t *testing.T) {
 		})
 	})
 
-	AddHandler(r, GET, "/global", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, MethodGet, "/global", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
 	}))
 
@@ -74,7 +74,7 @@ func TestAddGlobalMiddlewaresAreApplied(t *testing.T) {
 func TestAddHandlerSpecificMiddlewareRuns(t *testing.T) {
 	r := NewRPCRouter()
 
-	AddHandler(r, GET, "/middle", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, MethodGet, "/middle", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
 	}), func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -103,7 +103,7 @@ func TestRegisterErrorHandlerHandlesErrors(t *testing.T) {
 	})
 
 	router := NewRPCRouter()
-	AddHandler(router, GET, "/fail", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(router, MethodGet, "/fail", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return nil, errors.New("boom")
 	}))
 
@@ -125,7 +125,7 @@ func TestRouteMountsSubRouterWithMiddlewares(t *testing.T) {
 	hits := 0
 
 	Route(r, "/api", func(sub *RPCRouter) {
-		AddHandler(sub, GET, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		AddHandler(sub, MethodGet, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 			return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "pong"}, nil
 		}))
 	}, func(next http.Handler) http.Handler {
@@ -152,7 +152,7 @@ func TestMountAttachesSubRouter(t *testing.T) {
 	root := NewRPCRouter()
 	sub := NewRPCSubRouter()
 
-	AddHandler(sub, GET, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
 	}))
 
@@ -171,12 +171,65 @@ func TestMountAttachesSubRouter(t *testing.T) {
 	}
 }
 
+func TestMountOnRouteWithMiddlewares(t *testing.T) {
+	r := NewRPCRouter()
+	hits := 0
+
+	sub := NewRPCSubRouter()
+	AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
+	}))
+
+	Route(r, "/api", func(subRouter *RPCRouter) {
+		Mount(subRouter, "/prefix", sub)
+	}, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			hits++
+			next.ServeHTTP(w, req)
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/prefix/child", nil)
+	recorder := httptest.NewRecorder()
+	r.router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	if hits != 1 {
+		t.Fatalf("expected middleware to run once, ran %d times", hits)
+	}
+
+	// Verify generated ts types
+	path := "apiSchemaMountOnRoute.ts"
+	t.Cleanup(func() { _ = os.Remove(path) })
+
+	if err := GenerateRpcTypes(path); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file to exist: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "type ApiSchema") {
+		t.Fatalf("expected generated schema to contain type definition")
+	}
+
+	if !strings.Contains(content, "/api/prefix/child") {
+		t.Fatalf("expected schema to contain /api/prefix/child route")
+	}
+}
+
 func TestGroupAppliesMiddlewaresToNestedHandlers(t *testing.T) {
 	r := NewRPCRouter()
 	hits := 0
 
 	Group(r, func(sub *RPCRouter) {
-		AddHandler(sub, GET, "/group", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		AddHandler(sub, MethodGet, "/group", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 			return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "group"}, nil
 		}))
 	}, func(next http.Handler) http.Handler {
@@ -206,7 +259,7 @@ func TestMethodNotAllowedHandlerOverridesDefault(t *testing.T) {
 		w.WriteHeader(http.StatusTeapot)
 	})
 
-	AddHandler(r, GET, "/only-get", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, MethodGet, "/only-get", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "done"}, nil
 	}))
 
@@ -314,7 +367,7 @@ func TestRegisterErrorHandlerWrapsTypedResponse(t *testing.T) {
 	})
 
 	router := NewRPCRouter()
-	AddHandler(router, GET, "/err", RequestHandler[map[string]string](func(req *http.Request) (*HttpResponse[map[string]string], error) {
+	AddHandler(router, MethodGet, "/err", RequestHandler[map[string]string](func(req *http.Request) (*HttpResponse[map[string]string], error) {
 		return nil, errors.New("failed")
 	}))
 
@@ -338,7 +391,7 @@ func TestRegisterErrorHandlerWrapsTypedResponse(t *testing.T) {
 
 func TestAddHandlerReturnsBodyQueryParamWithSchema(t *testing.T) {
 	r := NewRPCRouter()
-	bqp := AddHandler(r, GET, "/items/{id}", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	bqp := AddHandler(r, MethodGet, "/items/{id}", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
 	}))
 	if bqp == nil {
@@ -359,7 +412,7 @@ func TestMiddlewareOrderGlobalThenRoute(t *testing.T) {
 		})
 	})
 
-	AddHandler(r, GET, "/mw-order", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, MethodGet, "/mw-order", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
 	}), func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -400,21 +453,21 @@ func TestGenerateRpcTypesWithRouteMountGroup(t *testing.T) {
 
 	// Using Route
 	Route(r, "/api", func(sub *RPCRouter) {
-		AddHandler(sub, GET, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		AddHandler(sub, MethodGet, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 			return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "pong"}, nil
 		}))
 	})
 
 	// Using Mount
 	sub := NewRPCSubRouter()
-	AddHandler(sub, GET, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
 	}))
 	Mount(r, "/prefix", sub)
 
 	// Using Group
 	Group(r, func(sub *RPCRouter) {
-		AddHandler(sub, GET, "/group", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		AddHandler(sub, MethodGet, "/group", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 			return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "group"}, nil
 		}))
 	})
@@ -444,10 +497,12 @@ func TestGenerateRpcTypesWithRouteMountGroup(t *testing.T) {
 }
 
 type fakeRouter struct{}
+
 func (f *fakeRouter) isRpcRouter() bool { return true }
+
 func TestAddHandlerWithUnknownRouterType(t *testing.T) {
 	fr := &fakeRouter{}
-	bqp := AddHandler(fr, GET, "/unknown", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	bqp := AddHandler(fr, MethodGet, "/unknown", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusNoContent}, nil
 	}))
 
@@ -461,7 +516,7 @@ func TestAddHandlerWithUnknownRouterType(t *testing.T) {
 
 func TestAddHandlerOnSubRouterRecordsSchema(t *testing.T) {
 	sub := NewRPCSubRouter()
-	bqp := AddHandler(sub, GET, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	bqp := AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
 	}))
 

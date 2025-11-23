@@ -28,8 +28,8 @@ func main() {
 	rpcRouter := chirpc.NewRPCRouter()
 
 	chirpc.AddGlobalMiddlewares(rpcRouter, middleware.Logger)
-	chirpc.AddHandler(rpcRouter, chirpc.GET, "/", GetHandler).BodyType(body{}).QueryType(body{})
-	chirpc.AddHandler(rpcRouter, chirpc.GET, "/{test}", GetHandler)
+	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/", GetHandler).BodyType(body{}).QueryType(body{})
+	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/{test}", GetHandler)
 
 	chirpc.RegisterErrorHandler(ErrorHandler)
 

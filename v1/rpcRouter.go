@@ -151,7 +151,7 @@ func Mount(r *RPCRouter, path string, subRouter *RPCSubRouter) {
 
 	for _, schema := range subRouter.subRoutes {
 		// adjust path to include mount point
-		schema.SetUrl(mergePaths(path, schema.URL()))
+		schema.SetUrl(mergePaths(mergePaths(r.prefixPath, path), schema.URL()))
 	}
 
 	rpcType.RegisterHandlers(subRouter.subRoutes)
@@ -180,6 +180,7 @@ func NotFound(r *RPCRouter, fn http.HandlerFunc) {
 }
 
 // RegisterErrorHandler sets a global error handler and registers its type information for generation.
+// This handler must be registered before adding any handlers is registered
 func RegisterErrorHandler[R any](handler ErrorHandlerType[R]) {
 	// register handler type to generate ts types
 	_, err := rpcType.RegisterHandler("ERROR_HANDLER", "/", handler)

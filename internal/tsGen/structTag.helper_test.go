@@ -206,4 +206,28 @@ func TestIsJsonTagOptional(t *testing.T) {
 	}
 }
 
+func TestIsFieldIgnored(t *testing.T) {
+	type ignoredSample struct {
+		IgnoredField string `tsOmit:"true"`
+		NotIgnored   string
+		NotIgnored2  string `tsOmit:"false"`
+	}
 
+	typ := reflect.TypeOf(ignoredSample{})
+
+	ignoredField, _ := typ.FieldByName("IgnoredField")
+	if !isFieldOmitted(ignoredField) {
+		t.Fatalf("structTagValue should be true but got %q", ignoredField.Tag.Get(structTagOmit))
+	}
+
+	notIgnored, _ := typ.FieldByName("NotIgnored")
+	if isFieldOmitted(notIgnored) {
+		t.Fatalf("structTagValue should be empty but got %q", notIgnored.Tag.Get(structTagOmit))
+	}
+
+	notIgnored2, _ := typ.FieldByName("NotIgnored2")
+	if isFieldOmitted(notIgnored2) {
+		t.Fatalf("structTagValue should be false but got %q", notIgnored2.Tag.Get(structTagOmit))
+	}
+
+}

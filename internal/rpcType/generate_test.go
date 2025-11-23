@@ -177,7 +177,7 @@ func TestConvertToTs_HandlesNestedTypesAcrossHandlers(t *testing.T) {
 		}
 		interface RpcType__TeamPayload {
 			Owner:RpcType__UserProfile;
-			Members:RpcType__UserProfile[];
+			Members:(RpcType__UserProfile)[];
 		}
 		export type ApiSchema = {
 			"GET": {
@@ -398,7 +398,7 @@ func TestConvertToTs_IncludesBodyQueryAndParam(t *testing.T) {
 				"/users/:userId": {
 					params: { "userId": string; };
 					query?: { Filter:string; Limit:number; };
-					body: { Name:string; TagIds:number[]; };
+					body: { Name:string; TagIds:(number)[]; };
 					response: string;
 				};
 			};
