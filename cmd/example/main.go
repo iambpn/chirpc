@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/iambpn/chirpc/v1"
@@ -27,11 +28,12 @@ func (b *body) Validate() error {
 func main() {
 	rpcRouter := chirpc.NewRPCRouter()
 
+	// chirpc.RegisterErrorHandler(ErrorHandler)
+
 	chirpc.AddGlobalMiddlewares(rpcRouter, middleware.Logger)
 	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/", GetHandler).BodyType(body{}).QueryType(body{})
+	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/error", GetErrorHandler)
 	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/{test}", GetHandler)
-
-	chirpc.RegisterErrorHandler(ErrorHandler)
 
 	err := chirpc.GenerateRpcTypes()
 
@@ -49,17 +51,17 @@ func main() {
 	}
 }
 
-func ErrorHandler(r *http.Request, err error) chirpc.HttpResponse[ErrorResponse] {
-	return chirpc.HttpResponse[ErrorResponse]{
+func ErrorHandler(r *http.Request, err *chirpc.ErrorResponse) *chirpc.HttpResponse[ErrorResponse] {
+	return &chirpc.HttpResponse[ErrorResponse]{
 		StatusCode: http.StatusInternalServerError,
-		Body:       ErrorResponse{Message: err.Error()},
+		Body:       ErrorResponse{Message: strings.Join(err.Errors, ", ")},
 		Headers: map[string]string{
 			"Content-Type": "application/json",
 		},
 	}
 }
 
-func GetHandler(r *http.Request) (*chirpc.HttpResponse[map[string]string], error) {
+func GetHandler(r *http.Request) (*chirpc.HttpResponse[map[string]string], *chirpc.ErrorResponse) {
 	return &chirpc.HttpResponse[map[string]string]{
 		StatusCode: http.StatusOK,
 		Body: map[string]string{
@@ -69,4 +71,10 @@ func GetHandler(r *http.Request) (*chirpc.HttpResponse[map[string]string], error
 			"Content-Type": "application/json",
 		},
 	}, nil
+}
+
+func GetErrorHandler(r *http.Request) (*chirpc.HttpResponse[map[string]string], *chirpc.ErrorResponse) {
+	return nil, &chirpc.ErrorResponse{
+		Errors: []string{"this is a test error"},
+	}
 }

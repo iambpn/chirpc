@@ -190,9 +190,9 @@ func RegisterErrorHandler[R any](handler ErrorHandlerType[R]) {
 		return
 	}
 
-	var anyHandler ErrorHandlerType[any] = func(r *http.Request, err error) HttpResponse[any] {
+	var anyHandler ErrorHandlerType[any] = func(r *http.Request, err *ErrorResponse) *HttpResponse[any] {
 		resp := handler(r, err)
-		return HttpResponse[any]{
+		return &HttpResponse[any]{
 			StatusCode: resp.StatusCode,
 			Body:       resp.Body,
 			Headers:    resp.Headers,

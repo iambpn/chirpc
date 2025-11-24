@@ -1,6 +1,8 @@
 package chirpc
 
-import "net/http"
+import (
+	"net/http"
+)
 
 // HttpResponse represents an HTTP response with a generic body type.
 // StatusCode is the HTTP status code.
@@ -12,31 +14,44 @@ type HttpResponse[T any] struct {
 	Headers    map[string]string
 }
 
+type ErrorResponse struct {
+	StatusCode       int                 `json:"statusCode,omitempty"`
+	Errors           []string            `json:"errors,omitempty"`
+	ValidationErrors map[string][]string `json:"validationErrors,omitempty"`
+}
+
 // MiddlewareType is a type alias for a middleware function that wraps an http.Handler.
 type MiddlewareType = func(http.Handler) http.Handler
 
 // ErrorHandlerType is a type alias for a function that handles errors and returns an HttpResponse.
-type ErrorHandlerType[T any] = func(*http.Request, error) HttpResponse[T]
+type ErrorHandlerType[T any] = func(*http.Request, *ErrorResponse) *HttpResponse[T]
 
 // RequestHandler defines a handler function that processes an HTTP request and returns an HttpResponse or error.
-type RequestHandler[T any] func(*http.Request) (*HttpResponse[T], error)
+type RequestHandler[T any] func(*http.Request) (*HttpResponse[T], *ErrorResponse)
 
 // ServeHTTPWithErrorHandler wraps the RequestHandler with error handling logic.
 // If an error occurs, it uses the provided errorHandler to generate a response.
 // If errorHandler is nil, it returns a 500 Internal Server Error.
 func (rh RequestHandler[T]) ServeHTTPWithErrorHandler(errorHandler ErrorHandlerType[any]) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		resp, err := rh(r)
+		resp, errResp := rh(r)
 
-		if err != nil {
+		if errResp != nil {
 			if errorHandler != nil {
-				resp := errorHandler(r, err)
-				sendResponse(w, &resp)
+				resp := errorHandler(r, errResp)
+				sendResponse(w, resp)
 				return
 			}
 
-			// if error handler is not set, return 500
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			// if error handler is not set, then return default Error response with status code 500
+			defaultHttpResp := &HttpResponse[*ErrorResponse]{
+				StatusCode: http.StatusInternalServerError,
+				Body:       errResp,
+				Headers: map[string]string{
+					"Content-Type": "application/json",
+				},
+			}
+			sendResponse(w, defaultHttpResp)
 			return
 		}
 
