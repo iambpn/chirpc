@@ -8,7 +8,8 @@ type TsGenOptsState int
 const (
 	// ToLowercase indicates whether exported fields should be converted to lowercase.
 	ToLowercase TsGenOptsState = iota
-	// AddHeaderToInterface indicates whether to add a header to the generated TypeScript interface.
+	// AddHeaderToInterface indicates whether to generate a named TypeScript interface.
+	// When false, an anonymous interface is generated instead.
 	AddHeaderToInterface
 	// UnCapitalizeHeader indicates whether to uncapitalize the header in the generated TypeScript code.
 	UnCapitalizeHeader
@@ -39,6 +40,7 @@ func SetUnCapitalizeHeader(val bool) TsGenOpts {
 }
 
 // MergeOpts merges multiple TsGenOpts into a single TsGenOpts.
+// When the same option key appears in multiple maps, later values override earlier ones.
 func MergeOpts(opts ...TsGenOpts) TsGenOpts {
 	merged := make(TsGenOpts)
 	for _, opt := range opts {

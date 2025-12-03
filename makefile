@@ -10,4 +10,7 @@ run:
 test:
 	go test ./... --cover
 
+test-v:
+	go test ./... --cover -v
+
 .PHONY: run clean build test

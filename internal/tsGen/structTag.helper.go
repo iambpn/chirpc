@@ -45,7 +45,7 @@ func getHeaderName(valType reflect.Type, opt tsopts.TsGenOpts) string {
 	return headerName
 }
 
-// getTagType returns the value of the custom struct tag "structTagType" for the given field.
+// getTagType returns the value of the "tsType" struct tag for the given field.
 // If the tag is not present, it returns an empty string.
 func getTagType(field reflect.StructField) string {
 	if tagType, exists := field.Tag.Lookup(structTagType); exists {
@@ -122,6 +122,9 @@ func isFieldOptional(field reflect.StructField) bool {
 	return false
 }
 
+// isFieldOmitted determines whether a struct field should be excluded from TypeScript generation.
+// It checks if the field has a "json" tag set to "-" or a "tsOmit" tag set to "true".
+// Returns true if the field should be omitted, otherwise false.
 func isFieldOmitted(field reflect.StructField) bool {
 	// check for json tag first
 	if jsonTag, exists := field.Tag.Lookup("json"); exists {

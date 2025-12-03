@@ -38,6 +38,8 @@ func parseURLSlug(url string) []string {
 	return slugs
 }
 
+// mergePaths combines a base path and relative path into a single path,
+// handling trailing and leading slashes appropriately.
 func mergePaths(basePath, relativePath string) string {
 	if basePath == "" {
 		return relativePath

@@ -41,8 +41,8 @@ func sendResponse[T any](w http.ResponseWriter, resp *HttpResponse[T]) {
 	http.Error(w, "payload is not marshallable", http.StatusInternalServerError)
 }
 
-// isJSONMarshable reports whether the given reflect.Kind is supported by encoding/json
-// for marshaling (including pointers and interfaces that ultimately resolve to supported kinds).
+// isJSONMarshable reports whether the given reflect.Kind can be marshaled to JSON
+// by the encoding/json package. This checks the Kind itself, not dereferenced types.
 func isJSONMarshable(v reflect.Kind) bool {
 	// Check for basic types that can be marshaled to JSON
 	switch v {

@@ -1,7 +1,6 @@
 package chirpc
 
 import (
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +25,7 @@ func TestNewRPCRouterCreatesChiMux(t *testing.T) {
 func TestGetHttpServerSharesRouter(t *testing.T) {
 	r := NewRPCRouter()
 
-	AddHandler(r, MethodGet, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, MethodGet, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "pong"}, nil
 	}))
 
@@ -51,14 +50,14 @@ func TestListenAndServePropagatesErrors(t *testing.T) {
 func TestAddGlobalMiddlewaresAreApplied(t *testing.T) {
 	r := NewRPCRouter()
 
-	AddGlobalMiddlewares(r, func(next http.Handler) http.Handler {
+	AddMiddlewares(r, func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.Header().Set("X-Global", "hit")
 			next.ServeHTTP(w, req)
 		})
 	})
 
-	AddHandler(r, MethodGet, "/global", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, MethodGet, "/global", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
 	}))
 
@@ -74,7 +73,7 @@ func TestAddGlobalMiddlewaresAreApplied(t *testing.T) {
 func TestAddHandlerSpecificMiddlewareRuns(t *testing.T) {
 	r := NewRPCRouter()
 
-	AddHandler(r, MethodGet, "/middle", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, MethodGet, "/middle", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
 	}), func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -95,16 +94,19 @@ func TestAddHandlerSpecificMiddlewareRuns(t *testing.T) {
 func TestRegisterErrorHandlerHandlesErrors(t *testing.T) {
 	defer func() { errorHandler = nil }()
 
-	RegisterErrorHandler(func(r *http.Request, err error) HttpResponse[string] {
-		return HttpResponse[string]{
+	router := NewRPCRouter()
+	RegisterErrorHandler(router, func(r *http.Request, er *ErrorResponse) *HttpResponse[string] {
+		return &HttpResponse[string]{
 			StatusCode: http.StatusBadRequest,
 			Body:       "handled",
 		}
 	})
 
-	router := NewRPCRouter()
-	AddHandler(router, MethodGet, "/fail", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
-		return nil, errors.New("boom")
+	AddHandler(router, MethodGet, "/fail", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
+		return nil, &ErrorResponse{
+			StatusCode: http.StatusInternalServerError,
+			Errors:     []string{"original error"},
+		}
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/fail", nil)
@@ -125,9 +127,9 @@ func TestRouteMountsSubRouterWithMiddlewares(t *testing.T) {
 	hits := 0
 
 	Route(r, "/api", func(sub *RPCRouter) {
-		AddHandler(sub, MethodGet, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		AddHandler(sub, MethodGet, "/ping", func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 			return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "pong"}, nil
-		}))
+		})
 	}, func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			hits++
@@ -152,7 +154,7 @@ func TestMountAttachesSubRouter(t *testing.T) {
 	root := NewRPCRouter()
 	sub := NewRPCSubRouter()
 
-	AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
 	}))
 
@@ -176,7 +178,7 @@ func TestMountOnRouteWithMiddlewares(t *testing.T) {
 	hits := 0
 
 	sub := NewRPCSubRouter()
-	AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
 	}))
 
@@ -205,7 +207,7 @@ func TestMountOnRouteWithMiddlewares(t *testing.T) {
 	path := "apiSchemaMountOnRoute.ts"
 	t.Cleanup(func() { _ = os.Remove(path) })
 
-	if err := GenerateRpcTypes(path); err != nil {
+	if err := GenerateRPCSchema(r, path); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -229,7 +231,7 @@ func TestGroupAppliesMiddlewaresToNestedHandlers(t *testing.T) {
 	hits := 0
 
 	Group(r, func(sub *RPCRouter) {
-		AddHandler(sub, MethodGet, "/group", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		AddHandler(sub, MethodGet, "/group", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 			return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "group"}, nil
 		}))
 	}, func(next http.Handler) http.Handler {
@@ -259,7 +261,7 @@ func TestMethodNotAllowedHandlerOverridesDefault(t *testing.T) {
 		w.WriteHeader(http.StatusTeapot)
 	})
 
-	AddHandler(r, MethodGet, "/only-get", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, MethodGet, "/only-get", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "done"}, nil
 	}))
 
@@ -293,7 +295,7 @@ func TestRegisterMethodSupportsCustomVerb(t *testing.T) {
 	const customMethod = "CUSTOM"
 	RegisterMethod(customMethod)
 
-	AddHandler(r, HttpMethods(customMethod), "/custom", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, HttpMethods(customMethod), "/custom", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusAccepted, Body: "ok"}, nil
 	}))
 
@@ -310,7 +312,8 @@ func TestBuildRpcTypesWritesDefaultFile(t *testing.T) {
 	path := "apiSchema.ts"
 	t.Cleanup(func() { _ = os.Remove(path) })
 
-	if err := GenerateRpcTypes(); err != nil {
+	r := NewRPCRouter()
+	if err := GenerateRPCSchema(r, path); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -328,7 +331,8 @@ func TestBuildRpcTypesWritesToCustomPath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "schema.ts")
 
-	if err := GenerateRpcTypes(path); err != nil {
+	r := NewRPCRouter()
+	if err := GenerateRPCSchema(r, path); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -346,7 +350,8 @@ func TestBuildRpcTypesReturnsErrorWhenWriteFails(t *testing.T) {
 	dir := t.TempDir()
 	unreachable := filepath.Join(dir, "nested", "schema.ts")
 
-	err := GenerateRpcTypes(unreachable)
+	r := NewRPCRouter()
+	err := GenerateRPCSchema(r, unreachable)
 	if err == nil {
 		t.Fatal("expected error when parent directories are missing")
 	}
@@ -359,16 +364,19 @@ func TestBuildRpcTypesReturnsErrorWhenWriteFails(t *testing.T) {
 func TestRegisterErrorHandlerWrapsTypedResponse(t *testing.T) {
 	defer func() { errorHandler = nil }()
 
-	RegisterErrorHandler(func(r *http.Request, err error) HttpResponse[map[string]string] {
-		return HttpResponse[map[string]string]{
+	router := NewRPCRouter()
+	RegisterErrorHandler(router, func(r *http.Request, err *ErrorResponse) *HttpResponse[map[string]string] {
+		return &HttpResponse[map[string]string]{
 			StatusCode: http.StatusInternalServerError,
-			Body:       map[string]string{"error": err.Error()},
+			Body:       map[string]string{"error": err.Errors[0]},
 		}
 	})
 
-	router := NewRPCRouter()
-	AddHandler(router, MethodGet, "/err", RequestHandler[map[string]string](func(req *http.Request) (*HttpResponse[map[string]string], error) {
-		return nil, errors.New("failed")
+	AddHandler(router, MethodGet, "/err", RequestHandler[map[string]string](func(req *http.Request) (*HttpResponse[map[string]string], *ErrorResponse) {
+		return nil, &ErrorResponse{
+			StatusCode: http.StatusInternalServerError,
+			Errors:     []string{"failed"},
+		}
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/err", nil)
@@ -391,7 +399,7 @@ func TestRegisterErrorHandlerWrapsTypedResponse(t *testing.T) {
 
 func TestAddHandlerReturnsBodyQueryParamWithSchema(t *testing.T) {
 	r := NewRPCRouter()
-	bqp := AddHandler(r, MethodGet, "/items/{id}", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	bqp := AddHandler(r, MethodGet, "/items/{id}", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
 	}))
 	if bqp == nil {
@@ -405,14 +413,14 @@ func TestAddHandlerReturnsBodyQueryParamWithSchema(t *testing.T) {
 func TestMiddlewareOrderGlobalThenRoute(t *testing.T) {
 	r := NewRPCRouter()
 
-	AddGlobalMiddlewares(r, func(next http.Handler) http.Handler {
+	AddMiddlewares(r, func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			w.Header().Set("X-Order", "global")
 			next.ServeHTTP(w, req)
 		})
 	})
 
-	AddHandler(r, MethodGet, "/mw-order", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(r, MethodGet, "/mw-order", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
 	}), func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -436,8 +444,9 @@ func TestRegisterErrorHandlerSetsGlobalHandler(t *testing.T) {
 		t.Fatal("expected initial global errorHandler to be nil")
 	}
 
-	RegisterErrorHandler(func(r *http.Request, err error) HttpResponse[string] {
-		return HttpResponse[string]{StatusCode: http.StatusBadRequest, Body: "handled"}
+	r := NewRPCRouter()
+	RegisterErrorHandler(r, func(r *http.Request, err *ErrorResponse) *HttpResponse[string] {
+		return &HttpResponse[string]{StatusCode: http.StatusBadRequest, Body: "handled"}
 	})
 
 	if errorHandler == nil {
@@ -453,26 +462,26 @@ func TestGenerateRpcTypesWithRouteMountGroup(t *testing.T) {
 
 	// Using Route
 	Route(r, "/api", func(sub *RPCRouter) {
-		AddHandler(sub, MethodGet, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		AddHandler(sub, MethodGet, "/ping", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 			return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "pong"}, nil
 		}))
 	})
 
 	// Using Mount
 	sub := NewRPCSubRouter()
-	AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
 	}))
 	Mount(r, "/prefix", sub)
 
 	// Using Group
 	Group(r, func(sub *RPCRouter) {
-		AddHandler(sub, MethodGet, "/group", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+		AddHandler(sub, MethodGet, "/group", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 			return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "group"}, nil
 		}))
 	})
 
-	if err := GenerateRpcTypes(path); err != nil {
+	if err := GenerateRPCSchema(r, path); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -491,6 +500,7 @@ func TestGenerateRpcTypesWithRouteMountGroup(t *testing.T) {
 	if !strings.Contains(content, "/prefix/child") {
 		t.Fatalf("expected schema to contain /prefix/child route")
 	}
+
 	if !strings.Contains(content, "/group") {
 		t.Fatalf("expected schema to contain /group route")
 	}
@@ -502,7 +512,7 @@ func (f *fakeRouter) isRpcRouter() bool { return true }
 
 func TestAddHandlerWithUnknownRouterType(t *testing.T) {
 	fr := &fakeRouter{}
-	bqp := AddHandler(fr, MethodGet, "/unknown", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	bqp := AddHandler(fr, MethodGet, "/unknown", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusNoContent}, nil
 	}))
 
@@ -516,7 +526,7 @@ func TestAddHandlerWithUnknownRouterType(t *testing.T) {
 
 func TestAddHandlerOnSubRouterRecordsSchema(t *testing.T) {
 	sub := NewRPCSubRouter()
-	bqp := AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], error) {
+	bqp := AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
 	}))
 

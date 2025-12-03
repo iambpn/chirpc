@@ -28,14 +28,14 @@ func (b *body) Validate() error {
 func main() {
 	rpcRouter := chirpc.NewRPCRouter()
 
-	// chirpc.RegisterErrorHandler(ErrorHandler)
+	chirpc.RegisterErrorHandler(rpcRouter, ErrorHandler)
 
-	chirpc.AddGlobalMiddlewares(rpcRouter, middleware.Logger)
+	chirpc.AddMiddlewares(rpcRouter, middleware.Logger)
 	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/", GetHandler).BodyType(body{}).QueryType(body{})
 	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/error", GetErrorHandler)
 	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/{test}", GetHandler)
 
-	err := chirpc.GenerateRpcTypes()
+	err := chirpc.GenerateRPCSchema(rpcRouter)
 
 	if err != nil {
 		fmt.Println("Error generating types:", err.Error())

@@ -7,7 +7,7 @@ import (
 	orderedmap "github.com/elliotchance/orderedmap/v3"
 )
 
-// interfaceValue represents a struct property value in a TypeScript interface.
+// interfaceValue represents a TypeScript interface property with its type and optional flag.
 type interfaceValue struct {
 	Value      string
 	IsOptional bool
@@ -54,11 +54,15 @@ func (t *TsInterface) GetProperty(key string) (*interfaceValue, error) {
 }
 
 // IsPrimary returns whether this interface is marked as primary.
+// Primary interfaces are directly added by the user, while non-primary ones are
+// referenced types that are automatically discovered and registered.
 func (t *TsInterface) IsPrimary() bool {
 	return t.isPrimary
 }
 
-// SetPrimary sets whether this interface is marked as primary.
+// SetPrimary marks this interface as primary or secondary.
+// Primary interfaces are directly added by the user, while non-primary ones are
+// referenced types that are automatically discovered and registered.
 func (t *TsInterface) SetPrimary(isPrimary bool) {
 	t.isPrimary = isPrimary
 }

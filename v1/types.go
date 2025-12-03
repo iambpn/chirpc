@@ -14,6 +14,8 @@ type HttpResponse[T any] struct {
 	Headers    map[string]string
 }
 
+// ErrorResponse represents a structured error response with status code, error messages,
+// and optional field-level validation errors.
 type ErrorResponse struct {
 	StatusCode       int                 `json:"statusCode,omitempty"`
 	Errors           []string            `json:"errors,omitempty"`

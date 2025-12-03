@@ -1,12 +1,15 @@
-package rpcType
+package rpc
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 // BodyQueryParamType holds schema metadata for request body, query string, and path parameters.
 // It is used to fluently declare the expected types for an RPC handler.
 // A nil Schema causes its mutator methods to become no-ops (with a warning logged).
 type BodyQueryParamType struct {
-	Schema *TsGoSchema
+	Schema *HandlerSchema
 }
 
 // BodyType registers the concrete Go type (or example instance) that represents
@@ -14,11 +17,11 @@ type BodyQueryParamType struct {
 // performs no action. Returns the receiver to allow method chaining.
 func (b *BodyQueryParamType) BodyType(body any) *BodyQueryParamType {
 	if b.Schema == nil {
-		fmt.Println("Warning: Cannot set body type because Schema is nil (check for handler registration errors)")
+		fmt.Fprintf(os.Stderr, "Warning: Cannot set body type because Schema is nil (check for handler registration errors)")
 		return b
 	}
 
-	SetBodyType(b.Schema, body)
+	b.Schema.SetBodyType(body)
 	return b
 }
 
@@ -27,11 +30,11 @@ func (b *BodyQueryParamType) BodyType(body any) *BodyQueryParamType {
 // and performs no action. Returns the receiver to allow method chaining.
 func (b *BodyQueryParamType) QueryType(query any) *BodyQueryParamType {
 	if b.Schema == nil {
-		fmt.Println("Warning: Cannot set query type because Schema is nil (check for handler registration errors)")
+		fmt.Fprintf(os.Stderr, "Warning: Cannot set query type because Schema is nil (check for handler registration errors)")
 		return b
 	}
 
-	SetQueryType(b.Schema, query)
+	b.Schema.SetQueryType(query)
 	return b
 }
 
@@ -44,10 +47,17 @@ func (b *BodyQueryParamType) Params(slugs []string) *BodyQueryParamType {
 	}
 
 	if b.Schema == nil {
-		fmt.Println("Warning: Cannot set params type because Schema is nil (check for handler registration errors)")
+		fmt.Fprintf(os.Stderr, "Warning: Cannot set params type because Schema is nil (check for handler registration errors)")
 		return b
 	}
 
-	SetParamsType(b.Schema, slugs)
+	b.Schema.SetParamsType(slugs)
 	return b
+}
+
+// NewBodyQueryParamType creates a new BodyQueryParamType wrapping the provided HandlerSchema.
+func NewBodyQueryParamType(schema *HandlerSchema) *BodyQueryParamType {
+	return &BodyQueryParamType{
+		Schema: schema,
+	}
 }
