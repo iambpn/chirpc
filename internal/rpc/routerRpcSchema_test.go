@@ -270,3 +270,64 @@ func TestRouterRpcSchemas_ConvertToTs_HandlesNoHandlers(t *testing.T) {
 		t.Fatalf("expected output %q for no handlers, got %q", expected, out)
 	}
 }
+
+func TestRouterRpcSchemas_RegisterHandlers(t *testing.T) {
+	t.Run("adds multiple schemas to collection", func(t *testing.T) {
+		r := NewRouterRpcSchemas()
+
+		schema1 := NewHandlerSchema("GET", "/test1", reflect.TypeOf(""))
+		schema2 := NewHandlerSchema("POST", "/test2", reflect.TypeOf(""))
+		schemas := []*HandlerSchema{schema1, schema2}
+
+		r.RegisterHandlers(schemas)
+
+		if len(r.schemas) != 2 {
+			t.Errorf("expected 2 schemas, got %d", len(r.schemas))
+		}
+
+		if r.schemas[0] != schema1 {
+			t.Error("first schema should match")
+		}
+
+		if r.schemas[1] != schema2 {
+			t.Error("second schema should match")
+		}
+	})
+
+	t.Run("does nothing when schemas slice is empty", func(t *testing.T) {
+		r := NewRouterRpcSchemas()
+		r.RegisterHandlers([]*HandlerSchema{})
+
+		if len(r.schemas) != 0 {
+			t.Errorf("expected 0 schemas, got %d", len(r.schemas))
+		}
+	})
+}
+
+func TestRouterRpcSchemas_RegisterHandlerFrom(t *testing.T) {
+	r1 := NewRouterRpcSchemas()
+	r2 := NewRouterRpcSchemas()
+
+	handler := func(*http.Request) (*testHttpResponse[string], error) {
+		return nil, nil
+	}
+
+	// Register handlers in r2
+	schema1, _ := r2.RegisterHandler("GET", "/test1", handler)
+	schema2, _ := r2.RegisterHandler("POST", "/test2", handler)
+
+	// Register r2's handlers into r1
+	r1.RegisterHandlerFrom(r2)
+
+	if len(r1.schemas) != 2 {
+		t.Errorf("expected 2 schemas in r1, got %d", len(r1.schemas))
+	}
+
+	if r1.schemas[0] != schema1 {
+		t.Error("first schema should match")
+	}
+
+	if r1.schemas[1] != schema2 {
+		t.Error("second schema should match")
+	}
+}

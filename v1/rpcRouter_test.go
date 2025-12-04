@@ -122,6 +122,45 @@ func TestRegisterErrorHandlerHandlesErrors(t *testing.T) {
 	}
 }
 
+func TestDefaultErrorResponseWhenNoErrorHandler(t *testing.T) {
+	defer func() { errorHandler = nil }()
+
+	router := NewRPCRouter()
+	// Explicitly ensure no error handler is set
+	errorHandler = nil
+
+	AddHandler(router, MethodGet, "/error-no-handler", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
+		return nil, &ErrorResponse{
+			StatusCode: http.StatusBadRequest,
+			Errors:     []string{"something went wrong"},
+			ValidationErrors: map[string][]string{
+				"field1": {"error1", "error2"},
+			},
+		}
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/error-no-handler", nil)
+	recorder := httptest.NewRecorder()
+	router.router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d (Internal Server Error), got %d", http.StatusInternalServerError, recorder.Code)
+	}
+
+	contentType := recorder.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Fatalf("expected Content-Type to be %q, got %q", "application/json", contentType)
+	}
+
+	body := strings.TrimSpace(recorder.Body.String())
+	expectedFields := []string{"statusCode", "errors", "validationErrors"}
+	for _, field := range expectedFields {
+		if !strings.Contains(body, field) {
+			t.Errorf("expected response body to contain field %q, got: %s", field, body)
+		}
+	}
+}
+
 func TestRouteMountsSubRouterWithMiddlewares(t *testing.T) {
 	r := NewRPCRouter()
 	hits := 0
@@ -539,5 +578,79 @@ func TestAddHandlerOnSubRouterRecordsSchema(t *testing.T) {
 	}
 	if bqp == nil || bqp.Schema != schema {
 		t.Fatalf("expected BodyQueryParamType to reference recorded schema, got %v", bqp.Schema)
+	}
+}
+
+func TestDefaultStatusCodeForSuccessResponse(t *testing.T) {
+	r := NewRPCRouter()
+
+	AddHandler(r, MethodGet, "/default-status", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
+		// Return response with StatusCode = 0
+		return &HttpResponse[string]{StatusCode: 0, Body: "ok"}, nil
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/default-status", nil)
+	recorder := httptest.NewRecorder()
+	r.router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected default status %d (OK), got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestDefaultStatusCodeForErrorHandler(t *testing.T) {
+	defer func() { errorHandler = nil }()
+
+	router := NewRPCRouter()
+	RegisterErrorHandler(router, func(r *http.Request, err *ErrorResponse) *HttpResponse[string] {
+		// Return error response with StatusCode = 0
+		return &HttpResponse[string]{
+			StatusCode: 0,
+			Body:       "handled",
+		}
+	})
+
+	AddHandler(router, MethodGet, "/error-default", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
+		return nil, &ErrorResponse{
+			StatusCode: http.StatusBadRequest,
+			Errors:     []string{"error occurred"},
+		}
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/error-default", nil)
+	recorder := httptest.NewRecorder()
+	router.router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("expected default error status %d (Internal Server Error), got %d", http.StatusInternalServerError, recorder.Code)
+	}
+}
+
+func TestMount_WithNilSubRouter(t *testing.T) {
+	router := NewRPCRouter()
+
+	// This should return early and not panic
+	Mount(router, "/test", nil)
+
+	// If it didn't panic, the test passes
+}
+
+func TestMount_AdjustsSchemaURLs(t *testing.T) {
+	router := NewRPCRouter()
+	subRouter := NewRPCSubRouter()
+
+	AddHandler(subRouter, MethodGet, "/users", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
+		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "users"}, nil
+	}))
+
+	Mount(router, "/api", subRouter)
+
+	// Verify the mounted route is accessible at the adjusted path
+	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	recorder := httptest.NewRecorder()
+	router.router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Errorf("Expected status 200 at /api/users, got %d", recorder.Code)
 	}
 }

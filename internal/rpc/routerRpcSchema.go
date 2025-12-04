@@ -15,11 +15,6 @@ type RouterRpcSchemas struct {
 	schemas []*HandlerSchema
 }
 
-// GetSchemas returns the collection of all registered handler schemas.
-func (r *RouterRpcSchemas) GetSchemas() []*HandlerSchema {
-	return r.schemas
-}
-
 // RegisterHandlers adds multiple HandlerSchema entries to the schema collection for TypeScript generation.
 // If the input slice is empty, the function does nothing.
 func (r *RouterRpcSchemas) RegisterHandlers(schemas []*HandlerSchema) {
@@ -29,6 +24,10 @@ func (r *RouterRpcSchemas) RegisterHandlers(schemas []*HandlerSchema) {
 
 	// add to global types slice for type generation
 	r.schemas = append(r.schemas, schemas...)
+}
+
+func (r *RouterRpcSchemas) RegisterHandlerFrom(routerSchema *RouterRpcSchemas) {
+	r.RegisterHandlers(routerSchema.schemas)
 }
 
 // RegisterHandler registers an RPC schema for type generation with its method, URL, and return type.

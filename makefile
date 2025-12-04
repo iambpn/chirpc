@@ -8,9 +8,12 @@ run:
 	go run cmd/example/main.go
 
 test:
-	go test ./... --cover
+	go test ./... --cover --coverprofile=coverage.out
 
 test-v:
 	go test ./... --cover -v
+
+html-coverage:
+	go tool cover -html=coverage.out -o coverage.html
 
 .PHONY: run clean build test

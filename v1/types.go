@@ -41,6 +41,11 @@ func (rh RequestHandler[T]) ServeHTTPWithErrorHandler(errorHandler ErrorHandlerT
 		if errResp != nil {
 			if errorHandler != nil {
 				resp := errorHandler(r, errResp)
+
+				if resp.StatusCode == 0 {
+					resp.StatusCode = http.StatusInternalServerError
+				}
+
 				sendResponse(w, resp)
 				return
 			}
@@ -57,6 +62,9 @@ func (rh RequestHandler[T]) ServeHTTPWithErrorHandler(errorHandler ErrorHandlerT
 			return
 		}
 
+		if resp.StatusCode == 0 {
+			resp.StatusCode = http.StatusOK
+		}
 		sendResponse(w, resp)
 	}
 }

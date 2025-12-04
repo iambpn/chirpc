@@ -154,7 +154,7 @@ func Route(r *RPCRouter, path string, fn func(r *RPCRouter), middlewares ...Midd
 		chiR.Mount("/", subRouter.router)
 
 		// register sub-router schemas to parent router
-		r.routerTypes.RegisterHandlers(subRouter.routerTypes.GetSchemas())
+		r.routerTypes.RegisterHandlerFrom(subRouter.routerTypes)
 	})
 }
 
@@ -185,7 +185,7 @@ func Group(r *RPCRouter, fn func(r *RPCRouter), middlewares ...MiddlewareType) {
 		chiR.Mount("/", subRouter.router)
 
 		// register sub-router schemas to parent router
-		r.routerTypes.RegisterHandlers(subRouter.routerTypes.GetSchemas())
+		r.routerTypes.RegisterHandlerFrom(subRouter.routerTypes)
 	})
 }
 
