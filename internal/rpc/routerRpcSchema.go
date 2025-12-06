@@ -22,8 +22,17 @@ func (r *RouterRpcSchemas) RegisterHandlers(schemas []*HandlerSchema) {
 		return
 	}
 
+	// remove the error handler schema if it exists
+	var filteredSchemas []*HandlerSchema
+	for _, schema := range schemas {
+		if schema.method == "ERROR_HANDLER" {
+			continue
+		}
+		filteredSchemas = append(filteredSchemas, schema)
+	}
+
 	// add to global types slice for type generation
-	r.schemas = append(r.schemas, schemas...)
+	r.schemas = append(r.schemas, filteredSchemas...)
 }
 
 func (r *RouterRpcSchemas) RegisterHandlerFrom(routerSchema *RouterRpcSchemas) {
@@ -37,6 +46,16 @@ func (r *RouterRpcSchemas) RegisterHandler(method, url string, fnVal any) (*Hand
 
 	if err != nil {
 		return nil, err
+	}
+
+	// replace existing error handler schema if exists
+	if method == "ERROR_HANDLER" {
+		for i, existingSchema := range r.schemas {
+			if existingSchema.method == "ERROR_HANDLER" {
+				r.schemas[i] = schema
+				return schema, nil
+			}
+		}
 	}
 
 	r.schemas = append(r.schemas, schema)

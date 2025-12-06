@@ -144,17 +144,17 @@ func AddHandler[R any](r IsRPCRouter, method HttpMethods, path string, handler R
 // Route creates a sub-route at the specified path, applies middlewares to it, and invokes the callback to populate it.
 func Route(r *RPCRouter, path string, fn func(r *RPCRouter), middlewares ...MiddlewareType) {
 	r.router.Route(path, func(chiR chi.Router) {
-		subRouter := NewRPCRouter()
-		subRouter.prefixPath = path
+		router := NewRPCRouter()
+		router.prefixPath = path
 
-		AddMiddlewares(subRouter, middlewares...)
-		fn(subRouter)
+		AddMiddlewares(router, middlewares...)
+		fn(router)
 
 		// mount sub-router at path
-		chiR.Mount("/", subRouter.router)
+		chiR.Mount("/", router.router)
 
 		// register sub-router schemas to parent router
-		r.routerTypes.RegisterHandlerFrom(subRouter.routerTypes)
+		r.routerTypes.RegisterHandlerFrom(router.routerTypes)
 	})
 }
 
@@ -177,15 +177,15 @@ func Mount(r *RPCRouter, path string, subRouter *RPCSubRouter) {
 // Group creates an anonymous grouped sub-router, applies middlewares, and invokes the callback for registration.
 func Group(r *RPCRouter, fn func(r *RPCRouter), middlewares ...MiddlewareType) {
 	r.router.Group(func(chiR chi.Router) {
-		subRouter := NewRPCRouter()
-		AddMiddlewares(subRouter, middlewares...)
-		fn(subRouter)
+		router := NewRPCRouter()
+		AddMiddlewares(router, middlewares...)
+		fn(router)
 
 		// mount sub-router at path
-		chiR.Mount("/", subRouter.router)
+		chiR.Mount("/", router.router)
 
 		// register sub-router schemas to parent router
-		r.routerTypes.RegisterHandlerFrom(subRouter.routerTypes)
+		r.routerTypes.RegisterHandlerFrom(router.routerTypes)
 	})
 }
 
@@ -247,5 +247,6 @@ func GenerateRPCSchema(r *RPCRouter, paths ...string) error {
 		return errors.New("failed to write types to file: " + err.Error())
 	}
 
+	fmt.Printf("Successfully generated RPC schema at %s\n", path)
 	return nil
 }
