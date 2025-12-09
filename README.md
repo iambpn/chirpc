@@ -1,30 +1,36 @@
 # chirpc
 
-> End-to-end type-safe RPC toolkit for Go chi routers and TypeScript clients.
+> End-to-end type-safe RPC toolkit for Go chi routers and TypeScript clients
 
 ## Introduction
 
-**chirpc** is a lightweight RPC framework that wraps the excellent [chi](https://github.com/go-chi/chi) router with a type-safe layer, ensuring Go backend handlers and TypeScript frontend clients stay perfectly synchronized. By leveraging Go generics and automatic TypeScript code generation, chirpc eliminates manual type definitions and prevents API contract mismatches.
+**chirpc** is a lightweight, type-safe RPC framework that wraps the powerful [chi](https://github.com/go-chi/chi) router with automatic TypeScript code generation. It bridges the gap between Go backend handlers and TypeScript frontend clients, ensuring perfect type synchronization across your entire stack.
 
-Each handler you register automatically produces a strongly typed schema that is exported to TypeScript, enabling compile-time type checking across your entire stack. No more hand-written DTOs, no more runtime surprises.
+By leveraging Go generics and automatic schema extraction, chirpc eliminates manual type definitions, prevents API contract mismatches, and provides compile-time type safety from server to client. Each handler you register automatically produces a strongly typed schema that is exported to TypeScript, enabling IDE autocomplete, type checking, and refactoring support across your full-stack application.
+
+No more hand-written DTOs, no more runtime surprises, no more API documentation drift.
 
 ## Features
 
-- **Type-Safe Handlers**: Generic-based request handlers with typed request/response bodies, query parameters, and URL params
-- **Automatic TypeScript Generation**: Converts Go structs to TypeScript interfaces with support for nested types, custom tags, and optional fields
-- **Drop-in chi Wrapper**: Works seamlessly with existing chi routers and middleware
-- **Flexible Error Handling**: Configurable error handlers with typed error payloads exposed to both Go and TypeScript
-- **Router Composition**: Built-in support for grouping, mounting, and nesting routers with middleware scoping
-- **Custom HTTP Methods**: Register and use custom HTTP verbs beyond the standard REST methods
-- **TypeScript Client Integration**: Generated `ApiSchema` works seamlessly with [ts-axios-wrapper](https://www.npmjs.com/package/ts-axios-wrapper) for fully typed API calls
-- **Struct Tag Support**: Customize TypeScript output using `tsKey`, `tsType`, `tsOptional`, and `tsOmit` tags
+- **🔒 End-to-End Type Safety**: Generic-based request handlers with typed request/response bodies, query parameters, and URL params that automatically sync with TypeScript clients
+- **🚀 Automatic TypeScript Generation**: Converts Go structs to TypeScript interfaces with support for nested types, anonymous structs, pointers, maps, arrays, and custom struct tags
+- **🔌 Drop-in chi Wrapper**: Seamlessly integrates with existing chi routers, middleware, and ecosystem
+- **⚡ Zero Runtime Overhead**: Type generation happens at build time; production code runs as fast as standard chi routers
+- **🛡️ Flexible Error Handling**: Configurable typed error handlers with structured error payloads exposed to both Go and TypeScript
+- **🎯 Router Composition**: Full support for grouping, mounting, and nesting routers with middleware scoping
+- **🔧 Custom HTTP Methods**: Register and use custom HTTP verbs beyond standard REST methods
+- **📦 TypeScript Client Ready**: Generated `ApiSchema` works seamlessly with [ts-axios-wrapper](https://www.npmjs.com/package/ts-axios-wrapper) for fully typed API calls
+- **🏷️ Struct Tag Support**: Customize TypeScript output using `tsKey`, `tsType`, `tsOptional`, and `tsOmit` tags
+- **📝 Path Parameter Extraction**: Automatic URL parameter detection and type generation from chi-style path patterns (`/{id}`)
+- **🔄 Nested Type Support**: Handles complex nested structs, pointers, maps, slices, and anonymous inline structs
 
 ## Installation
 
 ### Prerequisites
 
-- **Go**: Version 1.21 or higher
+- **Go**: Version 1.21 or higher (generics support required)
 - **Node.js**: Version 18 or higher (for consuming generated TypeScript types)
+- **TypeScript**: Version 4.5 or higher (recommended)
 
 ### Backend (Go)
 
@@ -36,10 +42,14 @@ go get github.com/iambpn/chirpc
 
 ### Frontend (TypeScript)
 
-Install the TypeScript client wrapper in your frontend project:
+Install the TypeScript client wrapper for making type-safe API calls:
 
 ```bash
 npm install ts-axios-wrapper
+# or
+yarn add ts-axios-wrapper
+# or
+pnpm add ts-axios-wrapper
 ```
 
 ## Usage
@@ -132,7 +142,7 @@ func HelloHandler(r *http.Request) (*chirpc.HttpResponse[HelloResponse], *chirpc
 func GetByIdHandler(r *http.Request) (*chirpc.HttpResponse[HelloResponse], *chirpc.ErrorResponse) {
     // Access URL params via chi's context
     // id := chi.URLParam(r, "id")
-    
+
     return &chirpc.HttpResponse[HelloResponse]{
         StatusCode: http.StatusOK,
         Body:       HelloResponse{Message: "Handler with URL params"},
@@ -159,9 +169,9 @@ export type ApiSchema = {
       body: { name: string; age?: number };
       response: { message: string };
     };
-    "/{id}": { 
-      params: { id: string }; 
-      response: { message: string } 
+    "/{id}": {
+      params: { id: string };
+      response: { message: string };
     };
   };
 };
@@ -182,8 +192,8 @@ import { TypedAxios } from "ts-axios-wrapper";
 import type { ApiSchema } from "./apiSchema.js";
 
 // Create a typed API client
-const api = new TypedAxios<ApiSchema>({ 
-  baseURL: "http://localhost:8080" 
+const api = new TypedAxios<ApiSchema>({
+  baseURL: "http://localhost:8080",
 });
 
 // Make type-safe API calls
@@ -193,26 +203,41 @@ const api = new TypedAxios<ApiSchema>({
 const response = await api.GET("/", {
   body: {
     name: "John Doe",
-    age: 25,
+    age: 25, // age is optional due to tsOptional tag
   },
   query: {
     name: "John Doe",
-  }
+  },
 });
 
-// TypeScript knows the response type
+// TypeScript knows the response type automatically
 console.log(response.body.message); // ✓ Type-safe!
 
 // GET request with URL parameters
 const userResponse = await api.GET("/{id}", {
-  params: { id: "123" }
+  params: { id: "123" }, // TypeScript enforces the 'id' parameter
 });
 
-// Generic request method
-api.request("GET", "/", {
+// Generic request method (alternative syntax)
+const altResponse = await api.request("GET", "/", {
   body: { name: "Jane Doe" },
 });
+
+// Error responses are also typed
+try {
+  await api.GET("/error");
+} catch (error) {
+  // error.response.data matches ErrorResponse type
+  console.error(error.response.data.message);
+}
 ```
+
+**Key Benefits:**
+
+- **Autocomplete**: Your IDE suggests available endpoints, methods, and required fields
+- **Type Safety**: Compile-time errors if you use wrong parameter types or miss required fields
+- **Refactoring**: Changing Go types automatically shows TypeScript errors that need fixing
+- **Self-Documenting**: No need for separate API documentation - types are the docs
 
 ### Advanced Usage
 
@@ -241,31 +266,68 @@ chirpc.Group(router, func(r *chirpc.RPCRouter) {
 
 #### Custom Struct Tags
 
-Customize TypeScript generation with struct tags:
+Customize TypeScript generation with struct tags to control how Go types are exported:
 
 ```go
 type User struct {
     ID        int    `json:"id" tsKey:"userId"`           // Rename field in TypeScript
-    Name      string `json:"name"`
+    Name      string `json:"name"`                        // Standard mapping
     Age       int    `json:"age" tsOptional:"true"`       // Make optional in TypeScript
     Email     string `json:"email" tsType:"string"`       // Override TypeScript type
     Password  string `json:"password" tsOmit:"true"`      // Exclude from TypeScript
-    CreatedAt time.Time `json:"created_at"`
+    CreatedAt time.Time `json:"created_at"`               // Mapped to string in TypeScript
+    Metadata  map[string]interface{} `json:"metadata"`   // Mapped to { [key: string]: any }
+    Tags      []string `json:"tags"`                      // Mapped to (string)[]
+    Profile   *Profile `json:"profile"`                   // Mapped to Profile | null
+}
+
+type Profile struct {
+    Bio       string `json:"bio"`
+    AvatarURL string `json:"avatar_url"`
 }
 ```
 
 Generated TypeScript:
 
 ```typescript
+interface Profile {
+  bio: string;
+  avatar_url: string;
+}
+
 interface User {
-  userId: number;
+  userId: number; // Renamed via tsKey
   name: string;
-  age?: number;
+  age?: number; // Optional via tsOptional
   email: string;
-  created_at: string;
-  // password is omitted
+  created_at: string; // time.Time becomes string
+  metadata: { [key: string]: any };
+  tags: string[];
+  profile: Profile | null; // Pointer becomes nullable
+  // password is omitted via tsOmit
 }
 ```
+
+**Available Struct Tags:**
+
+- `tsKey:"newName"` - Rename field in TypeScript interface
+- `tsType:"customType"` - Override the generated TypeScript type
+- `tsOptional:"true"` - Make the field optional (add `?` in TypeScript)
+- `tsOmit:"true"` - Exclude the field from TypeScript generation
+
+**Type Conversion Rules:**
+
+- `bool` → `boolean`
+- `int`, `int8`, `int16`, `int32`, `int64`, `uint`, `uint8`, `uint16`, `uint32`, `uint64`, `float32`, `float64` → `number`
+- `string` → `string`
+- `[]T` or `[N]T` → `(T)[]`
+- `map[K]V` → `{ [key: K]: V }`
+- `*T` → `T | null`
+- `struct` → separate interface
+- Anonymous struct → inline object type
+- `time.Time` → `string`
+- Unexported fields → ignored
+- Anonymous fields → ignored
 
 #### Custom HTTP Methods
 
@@ -295,89 +357,349 @@ chirpc.MethodNotAllowed(router, func(w http.ResponseWriter, r *http.Request) {
 
 ### Router Creation
 
-- **`NewRPCRouter() *RPCRouter`** - Create a new RPC router backed by chi.Mux
-- **`NewRPCSubRouter() *RPCSubRouter`** - Create a sub-router for mounting or grouping
+- **`NewRPCRouter() *RPCRouter`** Create a new RPC router backed by chi.Mux. This is the main entry point for creating a chirpc application.
+
+- **`NewRPCSubRouter() *RPCSubRouter`** Create a sub-router for mounting or grouping. Used with `Mount()` to organize routes.
 
 ### Handler Registration
 
-- **`AddHandler[R any](router, method, path, handler, ...middlewares) *BodyQueryParamType`** - Register a typed request handler and capture schema metadata. Returns a fluent builder for configuring body/query/param types
-- **`RegisterErrorHandler[R any](router, handler)`** - Define a global typed error handler invoked when handlers return errors
+- **`AddHandler[R any](router, method, path, handler, ...middlewares) *BodyQueryParamType`** Register a typed request handler and capture schema metadata for TypeScript generation. Returns a fluent builder for configuring body/query/param types.
+
+  **Parameters:**
+
+  - `router`: Either `*RPCRouter` or `*RPCSubRouter`
+  - `method`: HTTP method (use constants like `MethodGet`, `MethodPost`, etc.)
+  - `path`: URL path pattern (supports chi-style params like `/{id}`)
+  - `handler`: `RequestHandler[R]` function that processes requests
+  - `middlewares`: Optional middleware functions to apply to this specific handler
+
+  **Example:**
+
+  ```go
+  chirpc.AddHandler(router, chirpc.MethodGet, "/users/{id}", GetUserHandler).
+      QueryType(QueryParams{})
+  ```
+
+- **`RegisterErrorHandler[R any](router, handler)`** Define a global typed error handler invoked when handlers return `*ErrorResponse`. Must be registered before any route handlers.
+
+  **Example:**
+
+  ```go
+  chirpc.RegisterErrorHandler(router, func(r *http.Request, err *ErrorResponse) *HttpResponse[ErrorResponse] {
+      return &HttpResponse[ErrorResponse]{
+          StatusCode: http.StatusInternalServerError,
+          Body: ErrorResponse{Message: err.Errors[0]},
+      }
+  })
+  ```
 
 ### Middleware Management
 
-- **`AddMiddlewares(router, ...middlewares)`** - Attach middlewares to the router that apply to all registered routes
+- **`AddMiddlewares(router, ...middlewares)`** Attach middlewares to the router that apply to all registered routes. Supports standard chi middleware.
+
+  **Example:**
+
+  ```go
+  chirpc.AddMiddlewares(router, middleware.Logger, middleware.Recoverer)
+  ```
 
 ### Router Composition
 
-- **`Route(router, path, fn, ...middlewares)`** - Create a sub-route at the specified path with scoped middlewares
-- **`Mount(router, path, subRouter)`** - Mount an existing RPCSubRouter at the specified path
-- **`Group(router, fn, ...middlewares)`** - Create an anonymous grouped sub-router with scoped middlewares
+- **`Route(router, path, fn, ...middlewares)`** Create a sub-route at the specified path with scoped middlewares. The callback function receives a new router instance.
+
+  **Example:**
+
+  ```go
+  chirpc.Route(router, "/api/v1", func(r *RPCRouter) {
+      chirpc.AddHandler(r, chirpc.MethodGet, "/users", ListUsersHandler)
+  }, middleware.Logger)
+  ```
+
+- **`Mount(router, path, subRouter)`** Mount an existing RPCSubRouter at the specified path. All routes in the sub-router are prefixed with the mount path.
+
+  **Example:**
+
+  ```go
+  subRouter := chirpc.NewRPCSubRouter()
+  chirpc.AddHandler(subRouter, chirpc.MethodGet, "/profile", ProfileHandler)
+  chirpc.Mount(router, "/user", subRouter)  // Accessible at /user/profile
+  ```
+
+- **`Group(router, fn, ...middlewares)`** Create an anonymous grouped sub-router with scoped middlewares. Similar to `Route` but without a path prefix.
+
+  **Example:**
+
+  ```go
+  chirpc.Group(router, func(r *RPCRouter) {
+      chirpc.AddHandler(r, chirpc.MethodGet, "/protected", ProtectedHandler)
+  }, AuthMiddleware)
+  ```
 
 ### Request Type Configuration
 
-Returned by `AddHandler`, these methods configure the expected request types:
+Methods returned by `AddHandler` for configuring expected request types:
 
-- **`.BodyType(body any)`** - Specify the expected HTTP request body type
-- **`.QueryType(query any)`** - Specify the expected URL query parameter type
-- **`.Params(slugs []string)`** - Set expected URL path parameter slugs (auto-detected from path)
+- **`.BodyType(body any)`** Specify the expected HTTP request body type for TypeScript generation.
+- **`.QueryType(query any)`** Specify the expected URL query parameter type for TypeScript generation.
+- **`.Params(slugs []string)`** Set expected URL path parameter slugs. Usually auto-detected from path, but can be set manually if needed.
+
+**Example:**
+
+```go
+type CreateUserRequest struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+type QueryParams struct {
+    Page  int `json:"page" tsOptional:"true"`
+    Limit int `json:"limit" tsOptional:"true"`
+}
+
+chirpc.AddHandler(router, chirpc.MethodPost, "/users", CreateUserHandler).
+    BodyType(CreateUserRequest{}).
+    QueryType(QueryParams{})
+```
 
 ### Type Generation
 
-- **`GenerateRPCSchema(router, path...string) error`** - Generate TypeScript types for all registered handlers and write to file (default: `apiSchema.ts`)
+- **`GenerateRPCSchema(router, path...string) error`** Generate TypeScript types for all registered handlers and write to file. Default path is `apiSchema.ts` in the current directory.
+
+  **Example:**
+
+  ```go
+  // Write to default location (./apiSchema.ts)
+  err := chirpc.GenerateRPCSchema(router)
+
+  // Write to custom location
+  err := chirpc.GenerateRPCSchema(router, "frontend/src/types/api.ts")
+  ```
 
 ### HTTP Method Constants
 
-- `MethodGet`, `MethodPost`, `MethodPut`, `MethodDelete`, `MethodPatch`
-- `MethodOptions`, `MethodHead`, `MethodTrace`, `MethodConnect`
+Pre-defined HTTP method constants for use with `AddHandler`:
+
+- `MethodGet` - HTTP GET
+- `MethodPost` - HTTP POST
+- `MethodPut` - HTTP PUT
+- `MethodDelete` - HTTP DELETE
+- `MethodPatch` - HTTP PATCH
+- `MethodOptions` - HTTP OPTIONS
+- `MethodHead` - HTTP HEAD
+- `MethodTrace` - HTTP TRACE
+- `MethodConnect` - HTTP CONNECT
 
 ### Custom HTTP Verbs
 
-- **`RegisterMethod(method string)`** - Register a custom HTTP method with chi for routing
+- **`RegisterMethod(method string)`** Register a custom HTTP method with chi for routing. Call before using the method in handlers.
+
+  **Example:**
+
+  ```go
+  chirpc.RegisterMethod("CUSTOM")
+  chirpc.AddHandler(router, "CUSTOM", "/endpoint", CustomHandler)
+  ```
 
 ### Fallback Handlers
 
-- **`NotFound(router, handler)`** - Set custom handler for HTTP 404 Not Found responses
-- **`MethodNotAllowed(router, handler)`** - Set custom handler for HTTP 405 Method Not Allowed responses
+- **`NotFound(router, handler)`** Set custom handler for HTTP 404 Not Found responses.
+
+  **Example:**
+
+  ```go
+  chirpc.NotFound(router, func(w http.ResponseWriter, r *http.Request) {
+      w.WriteHeader(http.StatusNotFound)
+      json.NewEncoder(w).Encode(map[string]string{"error": "Not Found"})
+  })
+  ```
+
+- **`MethodNotAllowed(router, handler)`** Set custom handler for HTTP 405 Method Not Allowed responses.
+
+  **Example:**
+
+  ```go
+  chirpc.MethodNotAllowed(router, func(w http.ResponseWriter, r *http.Request) {
+      w.WriteHeader(http.StatusMethodNotAllowed)
+      json.NewEncoder(w).Encode(map[string]string{"error": "Method Not Allowed"})
+  })
+  ```
 
 ### Server Utilities
 
-- **`GetHttpServer() *http.Server`** - Get the underlying http.Server instance
-- **`ListenAndServe(addr string) error`** - Start the HTTP server on the specified address
+- **`GetHttpServer() *http.Server`** Get the underlying `http.Server` instance for advanced configuration.
+
+  **Example:**
+
+  ```go
+  server := router.GetHttpServer()
+  server.Addr = ":8080"
+  server.ReadTimeout = 10 * time.Second
+  server.WriteTimeout = 10 * time.Second
+  ```
+
+- **`ListenAndServe(addr string) error`** Start the HTTP server on the specified address. Convenience method that calls `http.ListenAndServe`.
+
+  **Example:**
+
+  ```go
+  err := router.ListenAndServe(":8080")
+  ```
 
 ### Core Types
 
-- **`HttpResponse[T any]`** - Generic HTTP response with StatusCode, Body, and Headers
-- **`ErrorResponse`** - Structured error response with StatusCode, Errors, and ValidationErrors
-- **`RequestHandler[T any]`** - Handler function type that processes requests and returns typed responses
-- **`ErrorHandlerType[T any]`** - Error handler function type
-- **`MiddlewareType`** - Type alias for chi middleware functions
+- **`HttpResponse[T any]`** Generic HTTP response structure with `StatusCode`, `Body`, and `Headers` fields.
+
+  ```go
+  type HttpResponse[T any] struct {
+      StatusCode int
+      Body       T
+      Headers    map[string]string
+  }
+  ```
+
+- **`ErrorResponse`** Structured error response with status code, error messages, and field-level validation errors.
+
+  ```go
+  type ErrorResponse struct {
+      StatusCode       int                 `json:"statusCode,omitempty"`
+      Errors           []string            `json:"errors,omitempty"`
+      ValidationErrors map[string][]string `json:"validationErrors,omitempty"`
+  }
+  ```
+
+- **`RequestHandler[T any]`** Handler function type that processes requests and returns typed responses or errors.
+
+  ```go
+  type RequestHandler[T any] func(*http.Request) (*HttpResponse[T], *ErrorResponse)
+  ```
+
+- **`ErrorHandlerType[T any]`** Error handler function type for processing error responses.
+
+  ```go
+  type ErrorHandlerType[T any] func(*http.Request, *ErrorResponse) *HttpResponse[T]
+  ```
+
+- **`MiddlewareType`** Type alias for chi middleware functions.
+
+  ```go
+  type MiddlewareType = func(http.Handler) http.Handler
+  ```
 
 ## Contributing
 
-Contributions are welcome! Here's how you can help:
+Contributions are welcome! Whether you want to fix a bug, add a feature, or improve documentation, your help is appreciated.
 
-1. **Open an Issue**: Before submitting a pull request, open an issue describing the improvement, bug fix, or feature you'd like to work on
-2. **Run Tests**: Ensure all tests pass with `go test ./...`
-3. **Add Coverage**: Include tests for new functionality or bug fixes
-4. **Follow Conventions**: 
-   - Use Go formatting conventions (`gofmt`, `go vet`)
-   - Keep PRs focused on a single feature or fix
-   - Write clear commit messages
-5. **Update Documentation**: Update README or code comments if your changes affect the public API
+### How to Contribute
 
-### Running Tests
+1. **Open an Issue First** Before starting work, open an issue describing the bug fix, improvement, or feature you'd like to work on. This helps avoid duplicate work and ensures your contribution aligns with the project's direction.
+
+2. **Fork and Clone** Fork the repository and clone it locally:
+
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/chirpc.git
+   cd chirpc
+   ```
+
+3. **Create a Branch** Create a feature branch for your changes:
+
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+4. **Make Your Changes**
+
+   - Write clear, idiomatic Go code
+   - Follow existing code style and conventions
+   - Add or update tests for new functionality
+   - Update documentation if your changes affect the public API
+
+5. **Run Tests** Ensure all tests pass before submitting:
+
+   ```bash
+   # Run all tests
+   go test ./...
+
+   # Run tests with coverage
+   go test -cover ./...
+
+   # Run tests for specific packages
+   go test ./v1
+   go test ./internal/tsGen
+   go test ./internal/rpc
+
+   # Generate coverage report
+   go test -coverprofile=coverage.out ./...
+   go tool cover -html=coverage.out
+   ```
+
+6. **Format and Lint** Ensure your code follows Go standards:
+
+   ```bash
+   # Format code
+   go fmt ./...
+
+   # Run go vet
+   go vet ./...
+
+   # Run staticcheck (if installed)
+   staticcheck ./...
+   ```
+
+7. **Commit and Push** Write clear, descriptive commit messages:
+
+   ```bash
+   git add .
+   git commit -m "feat: add support for custom response headers"
+   git push origin feature/your-feature-name
+   ```
+
+8. **Open a Pull Request**
+   - Provide a clear description of what your PR does
+   - Reference any related issues
+   - Ensure CI checks pass
+   - Be responsive to feedback and requests for changes
+
+### Development Guidelines
+
+- **Keep PRs Focused**: Each pull request should address a single feature or bug fix
+- **Write Tests**: All new features and bug fixes should include tests
+- **Maintain Coverage**: Aim to maintain or improve test coverage
+- **Update Documentation**: Update README.md, code comments, or examples if needed
+- **Follow Conventions**: Use Go idioms and follow the existing code style
+- **Be Respectful**: Follow the code of conduct and be kind to other contributors
+
+### Running the Example
+
+To test your changes with the example application:
 
 ```bash
-# Run all tests
-go test ./...
+# Run the Go example server
+cd cmd/example
+go run main.go
 
-# Run tests with coverage
-go test -cover ./...
-
-# Run tests for a specific package
-go test ./v1
-go test ./internal/tsGen
+# In another terminal, test the TypeScript client
+cd cmd/js
+npm install
+npx tsx main.ts
 ```
+
+### Reporting Issues
+
+When reporting bugs, please include:
+
+- Go version (`go version`)
+- Minimal code example that reproduces the issue
+- Expected vs actual behavior
+- Any relevant error messages or stack traces
+
+### Feature Requests
+
+For feature requests, please describe:
+
+- The problem you're trying to solve
+- Your proposed solution
+- Any alternative solutions you've considered
+- How this would benefit other users of chirpc
 
 ## License
 
