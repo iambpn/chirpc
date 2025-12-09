@@ -353,6 +353,10 @@ chirpc.MethodNotAllowed(router, func(w http.ResponseWriter, r *http.Request) {
 })
 ```
 
+## Examples
+
+- See the [Chirpc Examples](https://github.com/iambpn/Chirpc-examples) repository for complete server and client implementations.
+
 ## Exposed APIs
 
 ### Router Creation
