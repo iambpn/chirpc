@@ -18,6 +18,7 @@ Readme structure to follow:
 - Features: List of key features
 - Installation: Step-by-step instructions on how to install the project
 - Usage: Detailed guide on how to use the project, including code examples
+- Example: refer to this example repo link:- https://github.com/iambpn/Chirpc-examples
 - Exposed APIs: Description of the main APIs provided by the project
 - Contributing: Guidelines for contributing to the project
 - License: Information about the project's license
