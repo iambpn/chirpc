@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	orderedmap "github.com/elliotchance/orderedmap/v3"
 	"github.com/iambpn/chirpc/internal/tsGen/tsInterface"
@@ -226,7 +227,7 @@ func TestGetTypeCoversKinds(t *testing.T) {
 			t.Fatalf("field %s not found in fixture", fieldName)
 		}
 
-		if got := gen.GetType(field); got != want {
+		if got := gen.GetType(field, tsopts.TsGenOpts{}); got != want {
 			t.Fatalf("GetType(%s) = %q, want %q", fieldName, got, want)
 		}
 	}
@@ -392,4 +393,133 @@ func assertProperty(t *testing.T, inf *tsInterface.TsInterface, key, wantValue s
 	if prop.IsOptional != wantOptional {
 		t.Fatalf("property %s optional = %v, want %v", key, prop.IsOptional, wantOptional)
 	}
+}
+
+func TestTimeTypeConversion(t *testing.T) {
+	gen := New(tsopts.SetToLowercaseExportedField(true))
+
+	type TimeFixture struct {
+		CreatedAt time.Time `json:"created_at"`
+	}
+
+	if err := gen.AddValue(TimeFixture{}); err != nil {
+		t.Fatalf("AddValue returned error: %v", err)
+	}
+
+	inf, ok := gen.GetRegisteredTypes().Get("TsGen__TimeFixture")
+	if !ok {
+		t.Fatalf("interface not registered for TimeFixture")
+	}
+
+	assertProperty(t, inf, "created_at", "string", false)
+}
+
+func TestTimePointerConversion(t *testing.T) {
+	gen := New(tsopts.SetToLowercaseExportedField(true))
+
+	type TimePointerFixture struct {
+		UpdatedAt *time.Time `json:"updated_at"`
+	}
+
+	if err := gen.AddValue(TimePointerFixture{}); err != nil {
+		t.Fatalf("AddValue returned error: %v", err)
+	}
+
+	inf, ok := gen.GetRegisteredTypes().Get("TsGen__TimePointerFixture")
+	if !ok {
+		t.Fatalf("interface not registered for TimePointerFixture")
+	}
+
+	assertProperty(t, inf, "updated_at", "string | null", false)
+}
+
+func TestTimeSliceConversion(t *testing.T) {
+	gen := New(tsopts.SetToLowercaseExportedField(true))
+
+	type TimeSliceFixture struct {
+		Timestamps []time.Time `json:"timestamps"`
+	}
+
+	if err := gen.AddValue(TimeSliceFixture{}); err != nil {
+		t.Fatalf("AddValue returned error: %v", err)
+	}
+
+	inf, ok := gen.GetRegisteredTypes().Get("TsGen__TimeSliceFixture")
+	if !ok {
+		t.Fatalf("interface not registered for TimeSliceFixture")
+	}
+
+	assertProperty(t, inf, "timestamps", "(string)[]", false)
+}
+
+func TestTimeMapConversion(t *testing.T) {
+	gen := New(tsopts.SetToLowercaseExportedField(true))
+
+	type TimeMapFixture struct {
+		Events map[string]time.Time `json:"events"`
+	}
+
+	if err := gen.AddValue(TimeMapFixture{}); err != nil {
+		t.Fatalf("AddValue returned error: %v", err)
+	}
+
+	inf, ok := gen.GetRegisteredTypes().Get("TsGen__TimeMapFixture")
+	if !ok {
+		t.Fatalf("interface not registered for TimeMapFixture")
+	}
+
+	assertProperty(t, inf, "events", "{ [key: string]: string }", false)
+}
+
+func TestTimeInNestedStruct(t *testing.T) {
+	gen := New(tsopts.SetToLowercaseExportedField(true))
+
+	type Metadata struct {
+		CreatedAt time.Time  `json:"created_at"`
+		UpdatedAt *time.Time `json:"updated_at"`
+	}
+
+	type Document struct {
+		ID       int      `json:"id"`
+		Metadata Metadata `json:"metadata"`
+	}
+
+	if err := gen.AddValue(Document{}); err != nil {
+		t.Fatalf("AddValue returned error: %v", err)
+	}
+
+	metadataInf, ok := gen.GetRegisteredTypes().Get("TsGen__Metadata")
+	if !ok {
+		t.Fatalf("interface not registered for Metadata")
+	}
+
+	assertProperty(t, metadataInf, "created_at", "string", false)
+	assertProperty(t, metadataInf, "updated_at", "string | null", false)
+
+	docInf, ok := gen.GetRegisteredTypes().Get("TsGen__Document")
+	if !ok {
+		t.Fatalf("interface not registered for Document")
+	}
+
+	assertProperty(t, docInf, "id", "number", false)
+	assertProperty(t, docInf, "metadata", "TsGen__Metadata", false)
+}
+
+func TestTimeArrayConversion(t *testing.T) {
+	gen := New(tsopts.SetToLowercaseExportedField(true))
+
+	type TimeArrayFixture struct {
+		RecentDates [3]time.Time `json:"recent_dates"`
+	}
+
+	if err := gen.AddValue(TimeArrayFixture{}); err != nil {
+		t.Fatalf("AddValue returned error: %v", err)
+	}
+
+	inf, ok := gen.GetRegisteredTypes().Get("TsGen__TimeArrayFixture")
+	if !ok {
+		t.Fatalf("interface not registered for TimeArrayFixture")
+	}
+
+	assertProperty(t, inf, "recent_dates", "(string)[]", false)
 }
