@@ -26,6 +26,10 @@ func (b *body) Validate() error {
 }
 
 func main() {
+	startServer()
+}
+
+func startServer() {
 	rpcRouter := chirpc.NewRPCRouter()
 
 	chirpc.RegisterErrorHandler(rpcRouter, ErrorHandler)

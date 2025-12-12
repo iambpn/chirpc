@@ -37,7 +37,10 @@ const structTagOptional = "tsOptional"
 const structTagOmit = "tsOmit"
 
 // GetType returns the TypeScript type string for a given Go struct field.
-func (t *TsGen) GetType(field reflect.StructField) string {
+func (t *TsGen) GetType(field reflect.StructField, opts ...tsopts.TsGenOpts) string {
+	allOpts := append([]tsopts.TsGenOpts{t.opt}, opts...)
+	mergedOpt := tsopts.MergeOpts(allOpts...)
+
 	switch field.Type.Kind() {
 	case reflect.Bool:
 		return "boolean"
@@ -48,29 +51,16 @@ func (t *TsGen) GetType(field reflect.StructField) string {
 	case reflect.String:
 		return "string"
 	case reflect.Slice, reflect.Array:
-		elemType := t.GetType(reflect.StructField{Type: field.Type.Elem()})
+		elemType := t.GetType(reflect.StructField{Type: field.Type.Elem()}, mergedOpt)
 		return fmt.Sprintf("(%s)[]", elemType)
 	case reflect.Map:
-		keyType := t.GetType(reflect.StructField{Type: field.Type.Key()})
-		valueType := t.GetType(reflect.StructField{Type: field.Type.Elem()})
+		keyType := t.GetType(reflect.StructField{Type: field.Type.Key()}, mergedOpt)
+		valueType := t.GetType(reflect.StructField{Type: field.Type.Elem()}, mergedOpt)
 		return fmt.Sprintf("{ [key: %s]: %s }", keyType, valueType)
 	case reflect.Struct:
-		// handel nested anonymous struct
-		if field.Type.Name() == "" {
-			anonymousTsInf := t.buildTsStruct(field.Type, "", tsopts.SetAddHeaderToInterface(false))
-			return anonymousTsInf.String()
-		}
-
-		headerName := getHeaderName(field.Type, t.opt)
-		if _, exists := t.builder.GetType(headerName); !exists {
-			nestedTsInf := t.buildTsStruct(field.Type, "", tsopts.SetAddHeaderToInterface(true))
-			nestedTsInf.SetPrimary(false)
-			t.builder.RegisterType(nestedTsInf)
-		}
-
-		return headerName
+		return t.handleNestedStruct(field, mergedOpt)
 	case reflect.Pointer:
-		elemType := t.GetType(reflect.StructField{Type: field.Type.Elem()})
+		elemType := t.GetType(reflect.StructField{Type: field.Type.Elem()}, mergedOpt)
 		return elemType + " | null"
 	case reflect.Func:
 		return "Function"
@@ -85,13 +75,16 @@ func (t *TsGen) GetType(field reflect.StructField) string {
 
 // AddValue registers a Go value's type for TypeScript interface generation.
 func (t *TsGen) AddValue(val any, opts ...tsopts.TsGenOpts) error {
+	allOpts := append([]tsopts.TsGenOpts{t.opt}, opts...)
+	mergedOpt := tsopts.MergeOpts(allOpts...)
+
 	valType := reflect.TypeOf(val)
 
 	if valType.Kind() == reflect.Pointer {
 		valType = valType.Elem()
 	}
 
-	err := t.registerStruct(valType, "", opts...)
+	err := t.registerStruct(valType, "", mergedOpt)
 	if err != nil {
 		return err
 	}
@@ -101,13 +94,16 @@ func (t *TsGen) AddValue(val any, opts ...tsopts.TsGenOpts) error {
 
 // AddValueWithName registers a Go value's type with a custom TypeScript interface name.
 func (t *TsGen) AddValueWithName(val any, headerName string, opts ...tsopts.TsGenOpts) error {
+	allOpts := append([]tsopts.TsGenOpts{t.opt}, opts...)
+	mergedOpt := tsopts.MergeOpts(allOpts...)
+
 	valType := reflect.TypeOf(val)
 
 	if valType.Kind() == reflect.Pointer {
 		valType = valType.Elem()
 	}
 
-	err := t.registerStruct(valType, headerName, opts...)
+	err := t.registerStruct(valType, headerName, mergedOpt)
 	if err != nil {
 		return err
 	}
@@ -117,7 +113,10 @@ func (t *TsGen) AddValueWithName(val any, headerName string, opts ...tsopts.TsGe
 
 // AddType registers a Go type for TypeScript interface generation.
 func (t *TsGen) AddType(valType reflect.Type, opts ...tsopts.TsGenOpts) error {
-	err := t.registerStruct(valType, "", opts...)
+	allOpts := append([]tsopts.TsGenOpts{t.opt}, opts...)
+	mergedOpt := tsopts.MergeOpts(allOpts...)
+
+	err := t.registerStruct(valType, "", mergedOpt)
 	if err != nil {
 		return err
 	}
@@ -127,7 +126,10 @@ func (t *TsGen) AddType(valType reflect.Type, opts ...tsopts.TsGenOpts) error {
 
 // AddTypeWithName registers a Go type with a custom TypeScript interface name.
 func (t *TsGen) AddTypeWithName(valType reflect.Type, headerName string, opts ...tsopts.TsGenOpts) error {
-	err := t.registerStruct(valType, headerName, opts...)
+	allOpts := append([]tsopts.TsGenOpts{t.opt}, opts...)
+	mergedOpt := tsopts.MergeOpts(allOpts...)
+
+	err := t.registerStruct(valType, headerName, mergedOpt)
 	if err != nil {
 		return err
 	}
@@ -146,10 +148,7 @@ func (t *TsGen) GetRegisteredTypes() *orderedmap.OrderedMap[string, *tsInterface
 }
 
 // registerStruct registers a Go struct type for TypeScript interface generation.
-func (t *TsGen) registerStruct(valType reflect.Type, headerName string, opts ...tsopts.TsGenOpts) error {
-	allOpts := append([]tsopts.TsGenOpts{t.opt}, opts...)
-	opt := tsopts.MergeOpts(allOpts...)
-
+func (t *TsGen) registerStruct(valType reflect.Type, headerName string, opt tsopts.TsGenOpts) error {
 	if valType.Kind() != reflect.Struct {
 		return errors.New("cannot build TS type for non-struct types")
 	}
@@ -188,48 +187,9 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 			continue
 		}
 
-		// handle named nested struct field
-		if structField.Type.Name() != "" && structField.Type.Kind() == reflect.Struct {
-			// to check for cache header is required
-			newOpt := tsopts.MergeOpts(
-				tsopts.SetToLowercaseExportedField(t.opt[tsopts.ToLowercase]),
-				tsopts.SetAddHeaderToInterface(true),
-			)
-
-			nestedHeaderName := getTagType(structField)
-			if nestedHeaderName == "" {
-				nestedHeaderName = getHeaderName(structField.Type, newOpt)
-			}
-
-			// check if the nested struct type has already been generated
-			if _, exists := t.builder.GetType(nestedHeaderName); exists {
-				formattedKey := getTagKey(structField)
-
-				if formattedKey == "" {
-					formattedKey = stringUtils.ShouldToLower(structField.Name, opt[tsopts.ToLowercase])
-				}
-
-				tsInf.AddProperty(formattedKey, nestedHeaderName, isFieldOptional(structField))
-				continue
-			}
-
-			childTsInf := t.buildTsStruct(structField.Type, "", newOpt)
-			childTsInf.SetPrimary(false)
-			t.builder.RegisterType(childTsInf)
-
-			formattedKey := getTagKey(structField)
-
-			if formattedKey == "" {
-				formattedKey = stringUtils.ShouldToLower(structField.Name, opt[tsopts.ToLowercase])
-			}
-
-			tsInf.AddProperty(formattedKey, nestedHeaderName, isFieldOptional(structField))
-			continue
-		}
-
 		tsType := getTagType(structField)
 		if tsType == "" {
-			tsType = t.GetType(structField)
+			tsType = t.GetType(structField, opt)
 		}
 
 		formattedKey := getTagKey(structField)
@@ -242,6 +202,45 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 	}
 
 	return tsInf
+}
+
+// handleNestedStruct handles nested struct field
+// for named struct new interface need to be created
+// for anonymous struct interface is directly embedded into the parent interface
+func (t *TsGen) handleNestedStruct(structField reflect.StructField, opt tsopts.TsGenOpts) string {
+	if structField.Type.Name() != "" && structField.Type.Kind() == reflect.Struct {
+
+		// Special handling for time.Time - it serializes to string in JSON
+		if structField.Type.PkgPath() == "time" && structField.Type.Name() == "Time" {
+			tsType := "string"
+			return tsType
+		}
+
+		mergedOpt := tsopts.MergeOpts(
+			tsopts.SetToLowercaseExportedField(opt[tsopts.ToLowercase]),
+			tsopts.SetAddHeaderToInterface(true),
+		)
+
+		nestedHeaderName := getTagType(structField)
+		if nestedHeaderName == "" {
+			nestedHeaderName = getHeaderName(structField.Type, mergedOpt)
+		}
+
+		// check if the nested struct type has already been generated
+		if _, exists := t.builder.GetType(nestedHeaderName); exists {
+			return nestedHeaderName
+		}
+
+		// generate new interface for nested struct
+		childTsInf := t.buildTsStruct(structField.Type, "", mergedOpt)
+		childTsInf.SetPrimary(false)
+		t.builder.RegisterType(childTsInf)
+
+		return nestedHeaderName
+	} else {
+		anonymousTsInf := t.buildTsStruct(structField.Type, "", tsopts.SetAddHeaderToInterface(false))
+		return anonymousTsInf.String()
+	}
 }
 
 // New creates a new TsGen instance with the provided options.

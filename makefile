@@ -4,8 +4,8 @@ build:
 clean:
 	go clean && rm -f build/
 
-run:
-	go run cmd/example/main.go
+run-server:
+	go run cmd/example/server/main.go
 
 test:
 	go test ./... --cover --coverprofile=coverage.out
