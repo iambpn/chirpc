@@ -72,12 +72,12 @@ func TestGetTagType(t *testing.T) {
 	typ := reflect.TypeOf(tagged{})
 
 	fieldWithTag, _ := typ.FieldByName("WithTag")
-	if got := getTagType(fieldWithTag); got != "string" {
+	if got := getTsTypeTagValue(fieldWithTag); got != "string" {
 		t.Fatalf("getTagType(with tag) = %q, want %q", got, "string")
 	}
 
 	fieldWithout, _ := typ.FieldByName("Without")
-	if got := getTagType(fieldWithout); got != "" {
+	if got := getTsTypeTagValue(fieldWithout); got != "" {
 		t.Fatalf("getTagType(without tag) = %q, want empty string", got)
 	}
 }
@@ -92,17 +92,17 @@ func TestGetTagKey(t *testing.T) {
 	typ := reflect.TypeOf(keySample{})
 
 	defaultField, _ := typ.FieldByName("DefaultField")
-	if got := getTagKey(defaultField); got != "" {
+	if got := getTsKeyTagValue(defaultField); got != "" {
 		t.Fatalf("getTagKey(default) = %q, want %q", got, "")
 	}
 
 	taggedField, _ := typ.FieldByName("TaggedField")
-	if got := getTagKey(taggedField); got != "CustomKey" {
+	if got := getTsKeyTagValue(taggedField); got != "CustomKey" {
 		t.Fatalf("getTagKey(tagged) = %q, want %q", got, "CustomKey")
 	}
 
 	jsonField, _ := typ.FieldByName("JsonField")
-	if got := getTagKey(jsonField); got != "json_key" {
+	if got := getTsKeyTagValue(jsonField); got != "json_key" {
 		t.Fatalf("getTagKey(tagged) = %q, want %q", got, "json_key")
 	}
 }

@@ -187,12 +187,12 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 			continue
 		}
 
-		tsType := getTagType(structField)
+		tsType := getTsTypeTagValue(structField)
 		if tsType == "" {
 			tsType = t.GetType(structField, opt)
 		}
 
-		formattedKey := getTagKey(structField)
+		formattedKey := getTsKeyTagValue(structField)
 
 		if formattedKey == "" {
 			formattedKey = stringUtils.ShouldToLower(structField.Name, opt[tsopts.ToLowercase])
@@ -221,7 +221,7 @@ func (t *TsGen) handleNestedStruct(structField reflect.StructField, opt tsopts.T
 			tsopts.SetAddHeaderToInterface(true),
 		)
 
-		nestedHeaderName := getTagType(structField)
+		nestedHeaderName := getTsTypeTagValue(structField)
 		if nestedHeaderName == "" {
 			nestedHeaderName = getHeaderName(structField.Type, mergedOpt)
 		}

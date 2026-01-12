@@ -66,7 +66,7 @@ func (r *RouterRpcSchemas) RegisterHandler(method, url string, fnVal any) (*Hand
 // ConvertToTs generates consolidated TypeScript interfaces and RPC schema mappings
 // for all registered handlers. It returns the combined TypeScript code.
 func (r *RouterRpcSchemas) ConvertToTs() (string, error) {
-	rt := NewEndpointSchema(true)
+	eps := NewEndpointSchema(true)
 	globalTsTypes := orderedmap.NewOrderedMap[string, string]()
 
 	for _, t := range r.schemas {
@@ -107,7 +107,7 @@ func (r *RouterRpcSchemas) ConvertToTs() (string, error) {
 			switch name {
 			case "returnType":
 				{
-					// For return type: tsInf is the ts representation of HttpResponse[T]
+					// For return type: tsInf is the TS representation of HttpResponse[T]
 					// see above registerHandler function
 					body, err := tsInf.GetProperty("Body")
 
@@ -119,9 +119,10 @@ func (r *RouterRpcSchemas) ConvertToTs() (string, error) {
 				}
 			case "bodyType":
 				{
-					// for body type: tsInf is the ts representation of the struct
-					// see above setBodyType function
+					// for body type: tsInf is the TS representation of the Struct
+					// see setBodyType function
 
+					// removing header name to build anonymous interface
 					tsInf.AddInterfaceName("")
 
 					body := tsInf.String()
@@ -129,8 +130,8 @@ func (r *RouterRpcSchemas) ConvertToTs() (string, error) {
 				}
 			case "queryType":
 				{
-					// for query type: tsInf is the ts representation of the struct
-					// see above setQueryType function
+					// for query type: tsInf is the TS representation of the Struct
+					// see setQueryType function
 
 					// removing header name to build anonymous interface
 					tsInf.AddInterfaceName("")
@@ -152,7 +153,7 @@ func (r *RouterRpcSchemas) ConvertToTs() (string, error) {
 			schema.Param = t.paramsType
 		}
 
-		rt.AddRpcSchema(t.method, t.url, schema)
+		eps.AddRpcSchema(t.method, t.url, schema)
 	}
 
 	tsTypes := []string{}
@@ -160,7 +161,7 @@ func (r *RouterRpcSchemas) ConvertToTs() (string, error) {
 		tsTypes = append(tsTypes, el.Value)
 	}
 
-	return fmt.Sprintf("%s\n%s", strings.Join(tsTypes, "\n"), rt.String()), nil
+	return fmt.Sprintf("%s\n%s", strings.Join(tsTypes, "\n"), eps.String()), nil
 }
 
 // NewRouterRpcSchemas creates a new RouterRpcSchemas instance with an empty schema collection.

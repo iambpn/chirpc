@@ -45,9 +45,9 @@ func getHeaderName(valType reflect.Type, opt tsopts.TsGenOpts) string {
 	return headerName
 }
 
-// getTagType returns the value of the "tsType" struct tag for the given field.
+// getTsTypeTagValue returns the value of the "tsType" struct tag for the given field.
 // If the tag is not present, it returns an empty string.
-func getTagType(field reflect.StructField) string {
+func getTsTypeTagValue(field reflect.StructField) string {
 	if tagType, exists := field.Tag.Lookup(structTagType); exists {
 		return tagType
 	}
@@ -55,11 +55,11 @@ func getTagType(field reflect.StructField) string {
 	return ""
 }
 
-// getTagKey returns the key name for a struct field based on its tags.
+// getTsKeyTagValue returns the key name for a struct field based on its tags.
 // It first checks for a "json" tag and returns its value if present.
 // If not, it checks for a custom "tsKey" tag and returns its value.
 // If neither tag is present, it returns an empty string.
-func getTagKey(field reflect.StructField) string {
+func getTsKeyTagValue(field reflect.StructField) string {
 	// check for json tag first
 	if jsonTagKey := getJsonTagValue(field); jsonTagKey != "" {
 		return jsonTagKey
