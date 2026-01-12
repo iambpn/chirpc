@@ -90,13 +90,13 @@ func TestRouterRpcSchemas_ConvertToTs_GeneratesNestedTypeScriptInterfacesFromMul
 	}
 
 	expectedString := `
-		interface Rpc__TestAddress {
-			Line1:string;
-			Zip:number;
-		}
 		interface Rpc__TestUserProfile {
 			Name:string;
 			Primary:Rpc__TestAddress;
+		}
+		interface Rpc__TestAddress {
+			Line1:string;
+			Zip:number;
 		}
 		interface Rpc__TestTeamPayload {
 			Owner:Rpc__TestUserProfile;

@@ -9,20 +9,23 @@ import (
 	"github.com/iambpn/chirpc/internal/tsGen/tsopts"
 )
 
-// RouterRpcSchemas manages a collection of handler schemas and provides
-// TypeScript type generation for all registered RPC endpoints.
+// RouterRpcSchemas manages a collection of handler schemas and
+// generates TypeScript types for registered RPC endpoints.
 type RouterRpcSchemas struct {
 	schemas []*HandlerSchema
 }
 
-// RegisterHandlers adds multiple HandlerSchema entries to the schema collection for TypeScript generation.
+// RegisterHandlers adds multiple HandlerSchema entries to the
+// RPC schema collection for TypeScript type generation.
+//
 // If the input slice is empty, the function does nothing.
 func (r *RouterRpcSchemas) RegisterHandlers(schemas []*HandlerSchema) {
 	if len(schemas) == 0 {
 		return
 	}
 
-	// remove the error handler schema if it exists
+	// remove the error handler schema if it exists cause
+	// we only want one global error handler
 	var filteredSchemas []*HandlerSchema
 	for _, schema := range schemas {
 		if schema.method == "ERROR_HANDLER" {

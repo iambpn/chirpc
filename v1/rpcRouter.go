@@ -73,7 +73,8 @@ func NewRPCRouter() *RPCRouter {
 	}
 
 	// register default error handler
-	router.routerTypes.RegisterHandler("ERROR_HANDLER", "/", ErrorHandlerType[ErrorResponse](nil))
+	router.routerTypes.RegisterHandler(
+		"ERROR_HANDLER", "/", ErrorHandlerType[ErrorResponse](nil))
 	return router
 }
 

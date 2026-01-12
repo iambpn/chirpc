@@ -173,6 +173,10 @@ func (t *TsGen) buildTsStruct(valType reflect.Type, headerName string, opt tsopt
 	tsInf.SetPrimary(true)
 	tsInf.AddInterfaceName(headerName)
 
+	// Register the type immediately to handle circular references
+	// This prevents infinite recursion when a struct references itself
+	t.builder.RegisterType(tsInf)
+
 	for i := 0; i < valType.NumField(); i++ {
 		structField := valType.Field(i)
 
@@ -234,7 +238,6 @@ func (t *TsGen) handleNestedStruct(structField reflect.StructField, opt tsopts.T
 		// generate new interface for nested struct
 		childTsInf := t.buildTsStruct(structField.Type, "", mergedOpt)
 		childTsInf.SetPrimary(false)
-		t.builder.RegisterType(childTsInf)
 
 		return nestedHeaderName
 	} else {

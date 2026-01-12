@@ -654,3 +654,78 @@ func TestMount_AdjustsSchemaURLs(t *testing.T) {
 		t.Errorf("Expected status 200 at /api/users, got %d", recorder.Code)
 	}
 }
+
+func TestGenerateRPCSchema_CircularDependencies(t *testing.T) {
+	path := "apiSchemaCircular.ts"
+	t.Cleanup(func() { _ = os.Remove(path) })
+
+	// Define circular dependency types
+	// Node has a self-reference through Parent field and Children slice
+	type Node struct {
+		ID       int     `json:"id"`
+		Value    string  `json:"value"`
+		Parent   *Node   `json:"parent,omitempty"`
+		Children []*Node `json:"children,omitempty"`
+	}
+
+	type TreeResponse struct {
+		Root *Node `json:"root"`
+	}
+
+	r := NewRPCRouter()
+
+	// Add handler with circular dependency in response type
+	AddHandler(r, MethodGet, "/tree", RequestHandler[TreeResponse](func(req *http.Request) (*HttpResponse[TreeResponse], *ErrorResponse) {
+		return &HttpResponse[TreeResponse]{
+			StatusCode: http.StatusOK,
+			Body: TreeResponse{
+				Root: &Node{
+					ID:    1,
+					Value: "root",
+					Children: []*Node{
+						{ID: 2, Value: "child1"},
+						{ID: 3, Value: "child2"},
+					},
+				},
+			},
+		}, nil
+	}))
+
+	// Generate schema - should not panic or error on circular references
+	if err := GenerateRPCSchema(r, path); err != nil {
+		t.Fatalf("expected no error generating schema with circular dependencies, got %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file to exist: %v", err)
+	}
+
+	content := string(data)
+
+	// Verify the schema was generated
+	if !strings.Contains(content, "type ApiSchema") {
+		t.Fatalf("expected generated schema to contain type definition")
+	}
+
+	// Verify the route is included
+	if !strings.Contains(content, "/tree") {
+		t.Fatalf("expected schema to contain /tree route")
+	}
+
+	// Verify Node interface is generated only once (not duplicated due to circular ref)
+	nodeCount := strings.Count(content, "interface V1__Node")
+	if nodeCount != 1 {
+		t.Fatalf("expected Node interface to be defined exactly once, found %d occurrences", nodeCount)
+	}
+
+	// Verify TreeResponse interface exists
+	if !strings.Contains(content, "V1__TreeResponse") {
+		t.Fatalf("expected schema to contain TreeResponse interface")
+	}
+
+	// Verify circular reference fields are present
+	if !strings.Contains(content, "parent") || !strings.Contains(content, "children") {
+		t.Fatalf("expected schema to contain circular reference fields (parent, children)")
+	}
+}
