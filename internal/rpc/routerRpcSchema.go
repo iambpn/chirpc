@@ -156,6 +156,11 @@ func (r *RouterRpcSchemas) ConvertToTs() (string, error) {
 			schema.Param = t.paramsType
 		}
 
+		if t.StreamType() != "" {
+			schema.Stream = t.StreamType()
+			schema.Response = fmt.Sprintf("AsyncIterable<%s>", schema.Response)
+		}
+
 		eps.AddRpcSchema(t.method, t.url, schema)
 	}
 

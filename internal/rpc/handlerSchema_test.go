@@ -235,4 +235,18 @@ func TestNewHandlerSchema_InitializesOtherFieldsAsZeroValues(t *testing.T) {
 	if schema.paramsType != "" {
 		t.Fatalf("expected paramsType to be empty string, got %q", schema.paramsType)
 	}
+
+	if schema.StreamType() != "" {
+		t.Fatalf("expected streamType to be empty string, got %q", schema.StreamType())
+	}
+}
+
+func TestHandlerSchema_SetStreamType_SetsAndGetsStreamType(t *testing.T) {
+	schema := NewHandlerSchema("GET", "/stream", reflect.TypeOf(testHttpResponse[string]{}))
+
+	schema.SetStreamType("chunked")
+
+	if schema.StreamType() != "chunked" {
+		t.Fatalf("expected streamType to be %q, got %q", "chunked", schema.StreamType())
+	}
 }

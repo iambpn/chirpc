@@ -7,4 +7,5 @@ type RpcSchema struct {
 	Body     string
 	Query    string
 	Response string
+	Stream   string
 }

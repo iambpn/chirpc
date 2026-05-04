@@ -142,6 +142,61 @@ func AddHandler[R any](r IsRPCRouter, method HttpMethods, path string, handler R
 	return bodyQueryParam
 }
 
+// AddStreamHandler registers a chunked streaming RPC handler for the given method and path,
+// records its schema for TypeScript generation, and returns a BodyQueryParamType to allow
+// parameter configuration.
+func AddStreamHandler[R any](r IsRPCRouter, method HttpMethods, path string, handler StreamHandler[R], middlewares ...MiddlewareType) *rpc.BodyQueryParamType {
+	bodyQueryParam := rpc.NewBodyQueryParamType(nil)
+
+	// get specific rpc router
+	var rpcRouter *RPCRouter = nil
+	var rpcSubRouter *RPCSubRouter = nil
+	var mergedPath string
+
+	schemaHandler := RequestHandler[R](func(_ *http.Request) (*HttpResponse[R], *ErrorResponse) {
+		return nil, nil
+	})
+
+	switch rt := r.(type) {
+	case *RPCRouter:
+		rpcRouter = rt
+		mergedPath = mergePaths(rt.prefixPath, path)
+	case *RPCSubRouter:
+		rpcSubRouter = rt
+		mergedPath = mergePaths(rt.rpcRouter.prefixPath, path)
+		rpcRouter = rt.rpcRouter
+	default:
+		fmt.Fprintf(os.Stderr, "invalid router type provided to AddStreamHandler. Must be oneof RPCRouter or RPCSubRouter type\n")
+		return bodyQueryParam
+	}
+
+	var schema *rpc.HandlerSchema
+	var err error
+
+	if rpcSubRouter != nil {
+		schema, err = rpc.BuildGoToTsSchema(string(method), mergedPath, schemaHandler)
+		rpcSubRouter.subRoutes = append(rpcSubRouter.subRoutes, schema)
+	} else {
+		schema, err = rpcRouter.routerTypes.RegisterHandler(string(method), mergedPath, schemaHandler)
+	}
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "an error occurred while registering stream handler: \n %s", err)
+		return bodyQueryParam
+	}
+
+	schema.SetStreamType("chunked")
+	bodyQueryParam.Schema = schema
+
+	// get slugs from path
+	slugs := parseURLSlug(path)
+	bodyQueryParam.Params(slugs)
+
+	rpcRouter.router.With(middlewares...).Method(string(method), path, handler.ServeHTTPWithErrorHandler(errorHandler))
+
+	return bodyQueryParam
+}
+
 // Route creates a sub-route at the specified path, applies middlewares to it, and invokes the callback to populate it.
 func Route(r *RPCRouter, path string, fn func(r *RPCRouter), middlewares ...MiddlewareType) {
 	r.router.Route(path, func(chiR chi.Router) {

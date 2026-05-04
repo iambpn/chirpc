@@ -729,3 +729,96 @@ func TestGenerateRPCSchema_CircularDependencies(t *testing.T) {
 		t.Fatalf("expected schema to contain circular reference fields (parent, children)")
 	}
 }
+
+func TestAddStreamHandler_ReturnsBodyQueryParamWithSchema(t *testing.T) {
+	r := NewRPCRouter()
+	bqp := AddStreamHandler(r, MethodGet, "/stream/{id}", StreamHandler[string](func(req *http.Request) (*StreamResponse, *ErrorResponse) {
+		out := make(chan []byte, 1)
+		out <- []byte("\"hello\"\n")
+		close(out)
+		return &StreamResponse{
+			Stream: out,
+		}, nil
+	}))
+
+	if bqp == nil {
+		t.Fatal("expected BodyQueryParamType pointer, got nil")
+	}
+
+	if bqp.Schema == nil {
+		t.Fatal("expected Schema to be populated")
+	}
+
+	if bqp.Schema.StreamType() != "chunked" {
+		t.Fatalf("expected stream type %q, got %q", "chunked", bqp.Schema.StreamType())
+	}
+}
+
+func TestAddStreamHandler_StreamsChunkedBody(t *testing.T) {
+	r := NewRPCRouter()
+
+	AddStreamHandler(r, MethodGet, "/stream", StreamHandler[map[string]string](func(req *http.Request) (*StreamResponse, *ErrorResponse) {
+		out := make(chan []byte, 2)
+		out <- []byte(`{"message":"a"}` + "\n")
+		out <- []byte(`{"message":"b"}` + "\n")
+		close(out)
+		return &StreamResponse{
+			StatusCode: http.StatusCreated,
+			Headers: map[string]string{
+				"Content-Type":  "application/json",
+				"X-Stream-Test": "enabled",
+			},
+			Stream: out,
+		}, nil
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
+	rec := httptest.NewRecorder()
+	r.router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, rec.Code)
+	}
+
+	if rec.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("expected Content-Type application/json, got %q", rec.Header().Get("Content-Type"))
+	}
+
+	if rec.Header().Get("X-Stream-Test") != "enabled" {
+		t.Fatalf("expected X-Stream-Test enabled, got %q", rec.Header().Get("X-Stream-Test"))
+	}
+
+	if !strings.Contains(rec.Body.String(), `{"message":"a"}`) || !strings.Contains(rec.Body.String(), `{"message":"b"}`) {
+		t.Fatalf("expected streamed chunks in body, got %q", rec.Body.String())
+	}
+}
+
+func TestGenerateRPCSchema_IncludesAsyncIterableForStreamHandler(t *testing.T) {
+	path := "apiSchemaStream.ts"
+	t.Cleanup(func() { _ = os.Remove(path) })
+
+	r := NewRPCRouter()
+
+	AddStreamHandler(r, MethodGet, "/stream", StreamHandler[string](func(req *http.Request) (*StreamResponse, *ErrorResponse) {
+		out := make(chan []byte, 1)
+		out <- []byte("\"hello\"\n")
+		close(out)
+		return &StreamResponse{
+			Stream: out,
+		}, nil
+	}))
+
+	if err := GenerateRPCSchema(r, path); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file to exist: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "AsyncIterable<string>") {
+		t.Fatalf("expected generated schema to contain AsyncIterable response, got %q", content)
+	}
+}

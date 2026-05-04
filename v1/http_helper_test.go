@@ -1,6 +1,7 @@
 package chirpc
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -146,5 +147,120 @@ func TestIsJSONMarshable(t *testing.T) {
 		if got := isJSONMarshable(kind); got != c.want {
 			t.Fatalf("isJSONMarshable(%v) = %v, want %v", kind, got, c.want)
 		}
+	}
+}
+
+func TestSendStreamBytes_WritesHeadersAndNDJSONChunks(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
+
+	stream := make(chan []byte, 2)
+	stream <- []byte("{\"message\":\"one\"}\n")
+	stream <- []byte("{\"message\":\"two\"}\n")
+	close(stream)
+
+	sendStreamBytes(recorder, req, &StreamResponse{
+		Stream: stream,
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	if recorder.Header().Get("Content-Type") != "application/x-ndjson" {
+		t.Fatalf("expected Content-Type application/x-ndjson")
+	}
+
+	if recorder.Header().Get("Transfer-Encoding") != "chunked" {
+		t.Fatalf("expected Transfer-Encoding chunked")
+	}
+
+	got := recorder.Body.String()
+	expected := "{\"message\":\"one\"}\n{\"message\":\"two\"}\n"
+	if got != expected {
+		t.Fatalf("expected body %q, got %q", expected, got)
+	}
+}
+
+func TestSendStreamBytes_StopsWhenRequestContextCanceled(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
+
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	req = req.WithContext(ctx)
+
+	stream := make(chan []byte)
+
+	sendStreamBytes(recorder, req, &StreamResponse{
+		Stream: stream,
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestSendStreamBytes_UsesCustomHeadersAndStatus(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
+
+	stream := make(chan []byte, 1)
+	stream <- []byte("{\"message\":\"custom\"}\n")
+	close(stream)
+
+	sendStreamBytes(recorder, req, &StreamResponse{
+		StatusCode: http.StatusAccepted,
+		Headers: map[string]string{
+			"Content-Type":      "application/json",
+			"X-Stream-Mode":     "custom",
+			"Transfer-Encoding": "identity",
+		},
+		Stream: stream,
+	})
+
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, recorder.Code)
+	}
+
+	if recorder.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("expected Content-Type override to be applied")
+	}
+
+	if recorder.Header().Get("X-Stream-Mode") != "custom" {
+		t.Fatalf("expected custom header to be set")
+	}
+
+	if recorder.Header().Get("Transfer-Encoding") != "identity" {
+		t.Fatalf("expected Transfer-Encoding override to be applied")
+	}
+}
+
+func TestSendStreamBytes_WritesRawBytes(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
+
+	stream := make(chan []byte, 2)
+	stream <- []byte("hello")
+	stream <- []byte("world")
+	close(stream)
+
+	sendStreamBytes(recorder, req, &StreamResponse{
+		Headers: map[string]string{
+			"Content-Type": "application/octet-stream",
+		},
+		Stream: stream,
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	if recorder.Header().Get("Content-Type") != "application/octet-stream" {
+		t.Fatalf("expected Content-Type override to be applied")
+	}
+
+	if got := recorder.Body.String(); got != "helloworld" {
+		t.Fatalf("expected body %q, got %q", "helloworld", got)
 	}
 }

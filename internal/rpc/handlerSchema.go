@@ -15,6 +15,7 @@ type HandlerSchema struct {
 	bodyType   reflect.Type
 	paramsType string
 	queryType  reflect.Type
+	streamType string
 }
 
 // SetUrl sets the URL path for this handler schema.
@@ -64,6 +65,16 @@ func (p *HandlerSchema) SetQueryType(query any) {
 // SetParamsType converts path param slugs into a TypeScript interface shape and stores it on the schema.
 func (p *HandlerSchema) SetParamsType(slugs []string) {
 	p.paramsType = sliceToTsInf(slugs)
+}
+
+// SetStreamType sets the response stream type for this handler schema.
+func (p *HandlerSchema) SetStreamType(streamType string) {
+	p.streamType = streamType
+}
+
+// StreamType returns the response stream type for this handler schema.
+func (p *HandlerSchema) StreamType() string {
+	return p.streamType
 }
 
 // NewHandlerSchema creates a new HandlerSchema with the specified method, URL, and return type.

@@ -384,6 +384,27 @@ chirpc.MethodNotAllowed(router, func(w http.ResponseWriter, r *http.Request) {
       QueryType(QueryParams{})
   ```
 
+  - **`AddStreamHandler[R any](router, method, path, handler, ...middlewares) *BodyQueryParamType`** Register a typed streaming handler. The success response is returned as `*StreamResponse[R]` so you can set stream headers and status code per request.
+
+    **Example:**
+
+    ```go
+    chirpc.AddStreamHandler(router, chirpc.MethodGet, "/stream", func(r *http.Request) (*chirpc.StreamResponse[Chunk], *chirpc.ErrorResponse) {
+      out := make(chan Chunk, 1)
+      out <- Chunk{Message: "hello"}
+      close(out)
+
+      return &chirpc.StreamResponse[Chunk]{
+        StatusCode: http.StatusOK,
+        Headers: map[string]string{
+          "Content-Type": "application/x-ndjson",
+          "X-Stream-Mode": "demo",
+        },
+        Stream: out,
+      }, nil
+    })
+    ```
+
 - **`RegisterErrorHandler[R any](router, handler)`** Define a global typed error handler invoked when handlers return `*ErrorResponse`. Must be registered before any route handlers.
 
   **Example:**
@@ -575,6 +596,22 @@ Pre-defined HTTP method constants for use with `AddHandler`:
 
   ```go
   type RequestHandler[T any] func(*http.Request) (*HttpResponse[T], *ErrorResponse)
+  ```
+
+- **`StreamResponse[T any]`** Generic streaming response with status, headers, and chunk stream.
+
+  ```go
+  type StreamResponse[T any] struct {
+      StatusCode int
+      Stream     <-chan T
+      Headers    map[string]string
+  }
+  ```
+
+- **`StreamHandler[T any]`** Streaming handler function type that returns a `StreamResponse` or error.
+
+  ```go
+  type StreamHandler[T any] func(*http.Request) (*StreamResponse[T], *ErrorResponse)
   ```
 
 - **`ErrorHandlerType[T any]`** Error handler function type for processing error responses.

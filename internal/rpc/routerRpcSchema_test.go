@@ -331,3 +331,27 @@ func TestRouterRpcSchemas_RegisterHandlerFrom(t *testing.T) {
 		t.Error("second schema should match")
 	}
 }
+
+func TestRouterRpcSchemas_ConvertToTs_GeneratesAsyncIterableForStreamedHandler(t *testing.T) {
+	r := NewRouterRpcSchemas()
+
+	handler := func(*http.Request) (*testHttpResponse[string], error) {
+		return nil, nil
+	}
+
+	schema, err := r.RegisterHandler("get", "/stream", handler)
+	if err != nil {
+		t.Fatalf("unexpected error registering handler: %v", err)
+	}
+	schema.SetStreamType("chunked")
+
+	out, err := r.ConvertToTs()
+	if err != nil {
+		t.Fatalf("ConvertToTs returned error: %v", err)
+	}
+
+	expected := `
+		export type ApiSchema = { "GET": { "/stream": { response: AsyncIterable<string>; }; }; };
+	`
+	testVerifyTsTypes(t, out, expected)
+}
