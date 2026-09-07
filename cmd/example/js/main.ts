@@ -1,5 +1,5 @@
 import { TypedAxios } from "ts-axios-wrapper";
-import type { ApiSchema } from "../../apiSchema.js";
+import type { ApiSchema } from "../../../apiSchema.js";
 
 export const api = new TypedAxios<ApiSchema>();
 
