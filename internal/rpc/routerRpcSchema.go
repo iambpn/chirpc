@@ -3,10 +3,6 @@ package rpc
 import (
 	"fmt"
 	"strings"
-
-	orderedmap "github.com/elliotchance/orderedmap/v3"
-	"github.com/iambpn/chirpc/internal/tsGen"
-	"github.com/iambpn/chirpc/internal/tsGen/tsopts"
 )
 
 // RouterRpcSchemas manages a collection of handler schemas and
@@ -70,84 +66,28 @@ func (r *RouterRpcSchemas) RegisterHandler(method, url string, fnVal any) (*Hand
 // for all registered handlers. It returns the combined TypeScript code.
 func (r *RouterRpcSchemas) ConvertToTs() (string, error) {
 	eps := NewEndpointSchema(true)
-	globalTsTypes := orderedmap.NewOrderedMap[string, string]()
+	converter, err := newGutsConverter()
+	if err != nil {
+		return "", err
+	}
 
 	for _, t := range r.schemas {
-		tsgen := tsGen.New()
-
-		// add return type to tsgen
-		err := tsgen.AddTypeWithName(t.returnType, "returnType", tsopts.TsGenOpts{})
-
+		response, err := converter.responseType(t.returnType)
 		if err != nil {
 			return "", err
 		}
 
-		// add body type to tsgen if exists
+		schema := RpcSchema{Response: response}
 		if t.bodyType != nil {
-			err = tsgen.AddTypeWithName(t.bodyType, "bodyType", tsopts.TsGenOpts{})
-
+			schema.Body, err = converter.inlineStruct(t.bodyType)
 			if err != nil {
 				return "", err
 			}
 		}
-
-		// add query type to tsgen if exists
 		if t.queryType != nil {
-			err = tsgen.AddTypeWithName(t.queryType, "queryType", tsopts.TsGenOpts{})
+			schema.Query, err = converter.inlineStruct(t.queryType)
 			if err != nil {
 				return "", err
-			}
-		}
-
-		// fetched all registered types so we can check if body, param, query types exist
-		registeredTypes := tsgen.GetRegisteredTypes()
-
-		schema := RpcSchema{}
-
-		for el := registeredTypes.Front(); el != nil; el = el.Next() {
-			name := el.Key // headerName
-			tsInf := el.Value
-			switch name {
-			case "returnType":
-				{
-					// For return type: tsInf is the TS representation of HttpResponse[T]
-					// see above registerHandler function
-					body, err := tsInf.GetProperty("Body")
-
-					if err != nil {
-						return "", err
-					}
-
-					schema.Response = body.Value
-				}
-			case "bodyType":
-				{
-					// for body type: tsInf is the TS representation of the Struct
-					// see setBodyType function
-
-					// removing header name to build anonymous interface
-					tsInf.AddInterfaceName("")
-
-					body := tsInf.String()
-					schema.Body = body
-				}
-			case "queryType":
-				{
-					// for query type: tsInf is the TS representation of the Struct
-					// see setQueryType function
-
-					// removing header name to build anonymous interface
-					tsInf.AddInterfaceName("")
-
-					query := tsInf.String()
-					schema.Query = query
-				}
-			default:
-				{
-					if _, exists := globalTsTypes.Get(name); !exists {
-						globalTsTypes.Set(name, tsInf.String())
-					}
-				}
 			}
 		}
 
@@ -159,12 +99,12 @@ func (r *RouterRpcSchemas) ConvertToTs() (string, error) {
 		eps.AddRpcSchema(t.method, t.url, schema)
 	}
 
-	tsTypes := []string{}
-	for el := globalTsTypes.Front(); el != nil; el = el.Next() {
-		tsTypes = append(tsTypes, el.Value)
+	declarations, err := converter.declarationStrings()
+	if err != nil {
+		return "", err
 	}
 
-	return fmt.Sprintf("%s\n%s", strings.Join(tsTypes, "\n"), eps.String()), nil
+	return fmt.Sprintf("%s\n%s", strings.Join(declarations, "\n"), eps.String()), nil
 }
 
 // NewRouterRpcSchemas creates a new RouterRpcSchemas instance with an empty schema collection.

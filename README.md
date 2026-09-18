@@ -14,6 +14,7 @@ No more hand-written DTOs, no more runtime surprises, no more API documentation 
 
 - **🔒 End-to-End Type Safety**: Generic-based request handlers with typed request/response bodies, query parameters, and URL params that automatically sync with TypeScript clients
 - **🚀 Automatic TypeScript Generation**: Converts Go structs to TypeScript interfaces with support for nested types, anonymous structs, pointers, maps, arrays, and custom struct tags
+- **🧱 Compiler-backed output**: Builds a TypeScript AST with [coder/guts](https://github.com/coder/guts) and serializes it with the TypeScript compiler
 - **🔌 Drop-in chi Wrapper**: Seamlessly integrates with existing chi routers, middleware, and ecosystem
 - **⚡ Zero Runtime Overhead**: Type generation happens at build time; production code runs as fast as standard chi routers
 - **🛡️ Flexible Error Handling**: Configurable typed error handlers with structured error payloads exposed to both Go and TypeScript
@@ -158,7 +159,7 @@ When you run `chirpc.GenerateRPCSchema(router)`, it generates an `apiSchema.ts` 
 interface V1__ErrorResponse {
   statusCode?: number;
   errors?: string[];
-  validationErrors?: { [key: string]: string[] };
+  validationErrors?: Record<string, string[]> | null;
 }
 
 export type ApiSchema = {
@@ -276,8 +277,8 @@ type User struct {
     Email     string `json:"email" tsType:"string"`       // Override TypeScript type
     Password  string `json:"password" tsOmit:"true"`      // Exclude from TypeScript
     CreatedAt time.Time `json:"created_at"`               // Mapped to string in TypeScript
-    Metadata  map[string]interface{} `json:"metadata"`   // Mapped to { [key: string]: any }
-    Tags      []string `json:"tags"`                      // Mapped to (string)[]
+    Metadata  map[string]interface{} `json:"metadata"`   // Mapped to Record<string, unknown> | null
+    Tags      []string `json:"tags"`                      // Mapped to string[]
     Profile   *Profile `json:"profile"`                   // Mapped to Profile | null
 }
 
@@ -301,7 +302,7 @@ interface User {
   age?: number; // Optional via tsOptional
   email: string;
   created_at: string; // time.Time becomes string
-  metadata: { [key: string]: any };
+  metadata: Record<string, unknown> | null;
   tags: string[];
   profile: Profile | null; // Pointer becomes nullable
   // password is omitted via tsOmit
@@ -320,14 +321,17 @@ interface User {
 - `bool` → `boolean`
 - `int`, `int8`, `int16`, `int32`, `int64`, `uint`, `uint8`, `uint16`, `uint32`, `uint64`, `float32`, `float64` → `number`
 - `string` → `string`
-- `[]T` or `[N]T` → `(T)[]`
-- `map[K]V` → `{ [key: K]: V }`
+- `[]T` → `T[]`
+- `[N]T` → a fixed-length TypeScript tuple
+- `[]byte` and `[N]byte` → `string`
+- `map[K]V` → `Record<K, V> | null`
 - `*T` → `T | null`
 - `struct` → separate interface
 - Anonymous struct → inline object type
 - `time.Time` → `string`
+- `interface{}` and unsupported function/channel types → `unknown`
 - Unexported fields → ignored
-- Anonymous fields → ignored
+- Anonymous struct fields → TypeScript inheritance/intersections
 
 #### Custom HTTP Methods
 
@@ -628,7 +632,6 @@ Contributions are welcome! Whether you want to fix a bug, add a feature, or impr
 
    # Run tests for specific packages
    go test ./v1
-   go test ./internal/tsGen
    go test ./internal/rpc
 
    # Generate coverage report

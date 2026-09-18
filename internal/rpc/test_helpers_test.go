@@ -3,6 +3,7 @@ package rpc
 import (
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // Generic HTTP response used in tests to model handler return types.
@@ -42,10 +43,17 @@ type testSearchQ struct {
 func testVerifyTsTypes(t *testing.T, types string, expectedTypes string) {
 	t.Helper()
 
-	replacer := strings.NewReplacer("\n", " ", "\t", "")
+	normalize := func(value string) string {
+		return strings.Map(func(r rune) rune {
+			if unicode.IsSpace(r) {
+				return -1
+			}
+			return r
+		}, value)
+	}
 
-	types = strings.TrimSpace(replacer.Replace(types))
-	expectedTypes = strings.TrimSpace(replacer.Replace(expectedTypes))
+	types = normalize(types)
+	expectedTypes = normalize(expectedTypes)
 
 	if types != expectedTypes {
 		t.Fatalf("expected output \n%s\n, got \n%s\n", expectedTypes, types)

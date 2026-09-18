@@ -3,7 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/iambpn/chirpc/internal/tsGen"
+	"github.com/coder/guts"
+	"github.com/coder/guts/config"
 )
 
 type Nested struct {
@@ -11,15 +12,17 @@ type Nested struct {
 }
 
 type Config struct {
-	ToLower    bool `tsKey:"to_lower"`
-	AddHeader  bool `tsOptional:"true"`
-	GenericAny tsGen.GenericAny
+	ToLower    bool `json:"to_lower"`
+	AddHeader  bool `json:"add_header,omitempty"`
+	GenericAny any
 	Anyy       any `json:"json_any_field"` // make sure it works with json tags also
 	Nested     Nested
-	AnonNested struct {
-		AnonField int
-		Nested    Nested
-	}
+	AnonNested AnonNested
+}
+
+type AnonNested struct {
+	AnonField int
+	Nested    Nested
 }
 
 type Config2 struct {
@@ -29,40 +32,24 @@ type Config2 struct {
 }
 
 func main() {
-	tsGen := tsGen.New()
-
-	c1 := Config{
-		ToLower:    true,
-		AddHeader:  true,
-		GenericAny: 123,
-		Anyy:       10,
-		Nested: Nested{
-			NestedField: "example",
-		},
-		AnonNested: struct {
-			AnonField int
-			Nested    Nested
-		}{
-			AnonField: 42,
-			Nested: Nested{
-				NestedField: "anon example",
-			},
-		},
-	}
-
-	err := tsGen.AddValue(c1)
-
+	parser, err := guts.NewGolangParser()
 	if err != nil {
 		panic(err)
 	}
-
-	c2 := Config2{
-		FieldA:  "test",
-		FieldB:  100,
-		Config1: c1,
+	parser.IncludeCustomDeclaration(config.StandardMappings())
+	if err := parser.IncludeGenerate("github.com/iambpn/chirpc/cmd/tsgen-example"); err != nil {
+		panic(err)
 	}
 
-	tsGen.AddValue(c2)
+	typescript, err := parser.ToTypescript()
+	if err != nil {
+		panic(err)
+	}
+	typescript.ApplyMutations(config.ExportTypes)
 
-	fmt.Println(tsGen.String())
+	output, err := typescript.Serialize()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(output)
 }

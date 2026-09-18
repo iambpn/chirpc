@@ -100,7 +100,7 @@ func TestRouterRpcSchemas_ConvertToTs_GeneratesNestedTypeScriptInterfacesFromMul
 		}
 		interface Rpc__TestTeamPayload {
 			Owner:Rpc__TestUserProfile;
-			Members:(Rpc__TestUserProfile)[];
+			Members:Rpc__TestUserProfile[];
 		}
 		export type ApiSchema = {
 			"GET": {
@@ -186,7 +186,7 @@ func TestRouterRpcSchemas_ConvertToTs_IncludesBodyQueryAndParamsInGeneratedSchem
 				"/users/:userId": {
 					params: { "userId": string; };
 					query?: { Filter:string; Limit:number; };
-					body: { Name:string; TagIds:(number)[]; };
+					body: { Name:string; TagIds:number[]; };
 					response: string;
 				};
 			};

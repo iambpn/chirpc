@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/iambpn/chirpc/internal/tsGen"
-	"github.com/iambpn/chirpc/internal/tsGen/tsopts"
+	"github.com/coder/guts"
+	"github.com/coder/guts/config"
 )
 
 type User struct {
@@ -23,19 +23,25 @@ type Post struct {
 }
 
 func main() {
-	gen := tsGen.New(tsopts.SetToLowercaseExportedField(false))
-
-	// Add User type
-	if err := gen.AddValue(User{}); err != nil {
+	parser, err := guts.NewGolangParser()
+	if err != nil {
 		panic(err)
 	}
-
-	// Add Post type
-	if err := gen.AddValue(Post{}); err != nil {
+	parser.IncludeCustomDeclaration(config.StandardMappings())
+	if err := parser.IncludeGenerate("github.com/iambpn/chirpc/cmd/example/timedemo"); err != nil {
+		panic(err)
+	}
+	typescript, err := parser.ToTypescript()
+	if err != nil {
+		panic(err)
+	}
+	typescript.ApplyMutations(config.ExportTypes)
+	output, err := typescript.Serialize()
+	if err != nil {
 		panic(err)
 	}
 
 	// Print generated TypeScript interfaces
 	fmt.Println("Generated TypeScript interfaces:")
-	fmt.Println(gen.String())
+	fmt.Println(output)
 }
