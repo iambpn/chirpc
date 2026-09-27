@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/iambpn/chirpc/v1"
+	"github.com/iambpn/chirpc/v1/tsgen"
 )
 
 const addr = ":8080"
@@ -39,12 +40,15 @@ func startServer() {
 	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/error", GetErrorHandler)
 	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/{test}", GetHandler)
 
-	err := chirpc.GenerateRPCSchema(rpcRouter)
+	// This example generates the schema at startup for convenience. A production server
+	// should generate it in a separate program, so it does not link the TypeScript compiler.
+	err := tsgen.GenerateRPCSchema(rpcRouter)
 
 	if err != nil {
 		fmt.Println("Error generating types:", err.Error())
 		return
 	}
+	fmt.Println("Generated the RPC schema at apiSchema.ts.")
 
 	server := rpcRouter.GetHttpServer()
 	server.Addr = addr

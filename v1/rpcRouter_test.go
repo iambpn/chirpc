@@ -1,13 +1,14 @@
 package chirpc
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/iambpn/chirpc/internal/typescript"
 )
 
 func TestNewRPCRouterCreatesChiMux(t *testing.T) {
@@ -92,8 +93,6 @@ func TestAddHandlerSpecificMiddlewareRuns(t *testing.T) {
 }
 
 func TestRegisterErrorHandlerHandlesErrors(t *testing.T) {
-	defer func() { errorHandler = nil }()
-
 	router := NewRPCRouter()
 	RegisterErrorHandler(router, func(r *http.Request, er *ErrorResponse) *HttpResponse[string] {
 		return &HttpResponse[string]{
@@ -123,11 +122,7 @@ func TestRegisterErrorHandlerHandlesErrors(t *testing.T) {
 }
 
 func TestDefaultErrorResponseWhenNoErrorHandler(t *testing.T) {
-	defer func() { errorHandler = nil }()
-
 	router := NewRPCRouter()
-	// Explicitly ensure no error handler is set
-	errorHandler = nil
 
 	AddHandler(router, MethodGet, "/error-no-handler", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
 		return nil, &ErrorResponse{
@@ -143,8 +138,8 @@ func TestDefaultErrorResponseWhenNoErrorHandler(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	router.router.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status %d (Internal Server Error), got %d", http.StatusInternalServerError, recorder.Code)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected the ErrorResponse status %d, got %d", http.StatusBadRequest, recorder.Code)
 	}
 
 	contentType := recorder.Header().Get("Content-Type")
@@ -242,20 +237,7 @@ func TestMountOnRouteWithMiddlewares(t *testing.T) {
 		t.Fatalf("expected middleware to run once, ran %d times", hits)
 	}
 
-	// Verify generated ts types
-	path := "apiSchemaMountOnRoute.ts"
-	t.Cleanup(func() { _ = os.Remove(path) })
-
-	if err := GenerateRPCSchema(r, path); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("expected file to exist: %v", err)
-	}
-
-	content := string(data)
+	content := generateSchema(t, r)
 	if !strings.Contains(content, "type ApiSchema") {
 		t.Fatalf("expected generated schema to contain type definition")
 	}
@@ -347,62 +329,7 @@ func TestRegisterMethodSupportsCustomVerb(t *testing.T) {
 	}
 }
 
-func TestBuildRpcTypesWritesDefaultFile(t *testing.T) {
-	path := "apiSchema.ts"
-	t.Cleanup(func() { _ = os.Remove(path) })
-
-	r := NewRPCRouter()
-	if err := GenerateRPCSchema(r, path); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("expected file to exist: %v", err)
-	}
-
-	if !strings.Contains(string(data), "type ApiSchema") {
-		t.Fatalf("expected generated schema to contain type definition")
-	}
-}
-
-func TestBuildRpcTypesWritesToCustomPath(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "schema.ts")
-
-	r := NewRPCRouter()
-	if err := GenerateRPCSchema(r, path); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("expected file to exist: %v", err)
-	}
-
-	if !strings.Contains(string(data), "type ApiSchema") {
-		t.Fatalf("expected generated schema to contain type definition")
-	}
-}
-
-func TestBuildRpcTypesReturnsErrorWhenWriteFails(t *testing.T) {
-	dir := t.TempDir()
-	unreachable := filepath.Join(dir, "nested", "schema.ts")
-
-	r := NewRPCRouter()
-	err := GenerateRPCSchema(r, unreachable)
-	if err == nil {
-		t.Fatal("expected error when parent directories are missing")
-	}
-
-	if !strings.Contains(err.Error(), "failed to write types to file") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestRegisterErrorHandlerWrapsTypedResponse(t *testing.T) {
-	defer func() { errorHandler = nil }()
-
 	router := NewRPCRouter()
 	RegisterErrorHandler(router, func(r *http.Request, err *ErrorResponse) *HttpResponse[map[string]string] {
 		return &HttpResponse[map[string]string]{
@@ -477,25 +404,22 @@ func TestMiddlewareOrderGlobalThenRoute(t *testing.T) {
 	}
 }
 
-func TestRegisterErrorHandlerSetsGlobalHandler(t *testing.T) {
-	defer func() { errorHandler = nil }()
-	if errorHandler != nil {
-		t.Fatal("expected initial global errorHandler to be nil")
-	}
-
+func TestRegisterErrorHandlerSetsRouterHandler(t *testing.T) {
 	r := NewRPCRouter()
+	other := NewRPCRouter()
 	RegisterErrorHandler(r, func(r *http.Request, err *ErrorResponse) *HttpResponse[string] {
 		return &HttpResponse[string]{StatusCode: http.StatusBadRequest, Body: "handled"}
 	})
 
-	if errorHandler == nil {
-		t.Fatal("expected global errorHandler to be set")
+	if r.errorHandler == nil {
+		t.Fatal("expected router errorHandler to be set")
+	}
+	if other.errorHandler != nil {
+		t.Fatal("expected other router errorHandler to stay nil")
 	}
 }
 
 func TestGenerateRpcTypesWithRouteMountGroup(t *testing.T) {
-	path := "apiSchemaRouteMountGroup.ts"
-	t.Cleanup(func() { _ = os.Remove(path) })
 
 	r := NewRPCRouter()
 
@@ -520,16 +444,7 @@ func TestGenerateRpcTypesWithRouteMountGroup(t *testing.T) {
 		}))
 	})
 
-	if err := GenerateRPCSchema(r, path); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("expected file to exist: %v", err)
-	}
-
-	content := string(data)
+	content := generateSchema(t, r)
 	if !strings.Contains(content, "type ApiSchema") {
 		t.Fatalf("expected generated schema to contain type definition")
 	}
@@ -549,18 +464,15 @@ type fakeRouter struct{}
 
 func (f *fakeRouter) isRpcRouter() bool { return true }
 
-func TestAddHandlerWithUnknownRouterType(t *testing.T) {
-	fr := &fakeRouter{}
-	bqp := AddHandler(fr, MethodGet, "/unknown", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
-		return &HttpResponse[string]{StatusCode: http.StatusNoContent}, nil
-	}))
+func TestAddHandlerWithUnknownRouterTypePanics(t *testing.T) {
+	defer func() {
+		recovered := recover()
+		if recovered == nil || !strings.Contains(fmt.Sprint(recovered), "*chirpc.fakeRouter") {
+			t.Fatalf("expected a panic naming the router type, got %v", recovered)
+		}
+	}()
 
-	if bqp == nil {
-		t.Fatal("expected BodyQueryParamType pointer, got nil")
-	}
-	if bqp.Schema != nil {
-		t.Fatalf("expected Schema to be nil for unknown router type, got %v", bqp.Schema)
-	}
+	AddHandler(&fakeRouter{}, MethodGet, "/unknown", okHandler)
 }
 
 func TestAddHandlerOnSubRouterRecordsSchema(t *testing.T) {
@@ -569,15 +481,11 @@ func TestAddHandlerOnSubRouterRecordsSchema(t *testing.T) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "child"}, nil
 	}))
 
-	if len(sub.subRoutes) != 1 {
-		t.Fatalf("expected one schema recorded, got %d", len(sub.subRoutes))
+	if bqp == nil || bqp.Schema == nil {
+		t.Fatal("expected BodyQueryParamType to reference a recorded schema")
 	}
-	schema := sub.subRoutes[0]
-	if schema.URL() != "/child" {
-		t.Fatalf("expected schema URL %q, got %q", "/child", schema.URL())
-	}
-	if bqp == nil || bqp.Schema != schema {
-		t.Fatalf("expected BodyQueryParamType to reference recorded schema, got %v", bqp.Schema)
+	if bqp.Schema.URL() != "/child" {
+		t.Fatalf("expected schema URL %q, got %q", "/child", bqp.Schema.URL())
 	}
 }
 
@@ -599,8 +507,6 @@ func TestDefaultStatusCodeForSuccessResponse(t *testing.T) {
 }
 
 func TestDefaultStatusCodeForErrorHandler(t *testing.T) {
-	defer func() { errorHandler = nil }()
-
 	router := NewRPCRouter()
 	RegisterErrorHandler(router, func(r *http.Request, err *ErrorResponse) *HttpResponse[string] {
 		// Return error response with StatusCode = 0
@@ -621,8 +527,20 @@ func TestDefaultStatusCodeForErrorHandler(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	router.router.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusInternalServerError {
-		t.Fatalf("expected default error status %d (Internal Server Error), got %d", http.StatusInternalServerError, recorder.Code)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected the ErrorResponse status %d, got %d", http.StatusBadRequest, recorder.Code)
+	}
+}
+
+func TestErrorHandlerWithoutStatusCodesUses500(t *testing.T) {
+	router := NewRPCRouter()
+	RegisterErrorHandler(router, func(r *http.Request, err *ErrorResponse) *HttpResponse[string] {
+		return &HttpResponse[string]{Body: "handled"}
+	})
+	AddHandler(router, MethodGet, "/fail", failHandler)
+
+	if code := serve(router, http.MethodGet, "/fail").Code; code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, code)
 	}
 }
 
@@ -656,8 +574,6 @@ func TestMount_AdjustsSchemaURLs(t *testing.T) {
 }
 
 func TestGenerateRPCSchema_CircularDependencies(t *testing.T) {
-	path := "apiSchemaCircular.ts"
-	t.Cleanup(func() { _ = os.Remove(path) })
 
 	// Define circular dependency types
 	// Node has a self-reference through Parent field and Children slice
@@ -691,17 +607,7 @@ func TestGenerateRPCSchema_CircularDependencies(t *testing.T) {
 		}, nil
 	}))
 
-	// Generate schema - should not panic or error on circular references
-	if err := GenerateRPCSchema(r, path); err != nil {
-		t.Fatalf("expected no error generating schema with circular dependencies, got %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("expected file to exist: %v", err)
-	}
-
-	content := string(data)
+	content := generateSchema(t, r)
 
 	// Verify the schema was generated
 	if !strings.Contains(content, "type ApiSchema") {
@@ -714,18 +620,329 @@ func TestGenerateRPCSchema_CircularDependencies(t *testing.T) {
 	}
 
 	// Verify Node interface is generated only once (not duplicated due to circular ref)
-	nodeCount := strings.Count(content, "interface V1__Node")
+	nodeCount := strings.Count(content, "interface Chirpc__Node")
 	if nodeCount != 1 {
 		t.Fatalf("expected Node interface to be defined exactly once, found %d occurrences", nodeCount)
 	}
 
 	// Verify TreeResponse interface exists
-	if !strings.Contains(content, "V1__TreeResponse") {
+	if !strings.Contains(content, "Chirpc__TreeResponse") {
 		t.Fatalf("expected schema to contain TreeResponse interface")
 	}
 
 	// Verify circular reference fields are present
 	if !strings.Contains(content, "parent") || !strings.Contains(content, "children") {
 		t.Fatalf("expected schema to contain circular reference fields (parent, children)")
+	}
+}
+
+func okHandler(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
+	return &HttpResponse[string]{Body: req.URL.Path}, nil
+}
+
+func failHandler(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
+	return nil, &ErrorResponse{Errors: []string{"failed"}}
+}
+
+func serve(r *RPCRouter, method, url string) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	r.router.ServeHTTP(recorder, httptest.NewRequest(method, url, nil))
+	return recorder
+}
+
+func generateSchema(t *testing.T, r *RPCRouter) string {
+	t.Helper()
+	content, err := typescript.Convert(r.routerTypes)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	return content
+}
+
+func TestNestedRoutesAndGroupsUseFullPathInSchema(t *testing.T) {
+	r := NewRPCRouter()
+	Route(r, "/a", func(a *RPCRouter) {
+		Route(a, "/b", func(b *RPCRouter) {
+			AddHandler(b, MethodGet, "/nested", okHandler)
+		})
+		Group(a, func(g *RPCRouter) {
+			AddHandler(g, MethodGet, "/grouped", okHandler)
+		})
+	})
+
+	for _, url := range []string{"/a/b/nested", "/a/grouped"} {
+		if code := serve(r, http.MethodGet, url).Code; code != http.StatusOK {
+			t.Fatalf("expected %s to be served, got status %d", url, code)
+		}
+		if !strings.Contains(generateSchema(t, r), `"`+url+`"`) {
+			t.Fatalf("expected schema to contain %s", url)
+		}
+	}
+}
+
+func TestTwoGroupsOnSameRouter(t *testing.T) {
+	r := NewRPCRouter()
+	Group(r, func(g *RPCRouter) { AddHandler(g, MethodGet, "/g1", okHandler) })
+	Group(r, func(g *RPCRouter) { AddHandler(g, MethodGet, "/g2", okHandler) })
+	AddHandler(r, MethodGet, "/top", okHandler)
+
+	for _, url := range []string{"/g1", "/g2", "/top"} {
+		if code := serve(r, http.MethodGet, url).Code; code != http.StatusOK {
+			t.Fatalf("expected %s to be served, got status %d", url, code)
+		}
+	}
+}
+
+func TestParamsFromRoutePrefixAndRegexInSchema(t *testing.T) {
+	r := NewRPCRouter()
+	Route(r, "/users/{uid}", func(u *RPCRouter) {
+		AddHandler(u, MethodGet, "/posts/{postId:[0-9]+}", okHandler)
+	})
+	sub := NewRPCSubRouter()
+	AddHandler(sub, MethodGet, "/{code:[a-z]{3}}/{x}", okHandler)
+	Mount(r, "/teams/{teamId}", sub)
+
+	if code := serve(r, http.MethodGet, "/users/7/posts/42").Code; code != http.StatusOK {
+		t.Fatalf("expected regex route to be served, got status %d", code)
+	}
+
+	content := generateSchema(t, r)
+	for _, want := range []string{
+		`"/users/:uid/posts/:postId": {
+      params: { "uid": string;"postId": string; };`,
+		`"/teams/:teamId/:code/:x": {
+      params: { "teamId": string;"code": string;"x": string; };`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected schema to contain %s, got %s", want, content)
+		}
+	}
+}
+
+func TestMountIncludesLaterHandlersAndSupportsTwoPaths(t *testing.T) {
+	r := NewRPCRouter()
+	sub := NewRPCSubRouter()
+	AddHandler(sub, MethodGet, "/early", okHandler)
+	Mount(r, "/m1", sub)
+	Mount(r, "/m2", sub)
+	AddHandler(sub, MethodGet, "/late", okHandler)
+
+	content := generateSchema(t, r)
+	for _, url := range []string{"/m1/early", "/m1/late", "/m2/early", "/m2/late"} {
+		if code := serve(r, http.MethodGet, url).Code; code != http.StatusOK {
+			t.Fatalf("expected %s to be served, got status %d", url, code)
+		}
+		if !strings.Contains(content, `"`+url+`"`) {
+			t.Fatalf("expected schema to contain %s, got %s", url, content)
+		}
+	}
+}
+
+func TestDefaultErrorResponseWithoutStatusCodeUses500(t *testing.T) {
+	r := NewRPCRouter()
+	AddHandler(r, MethodGet, "/fail", failHandler)
+
+	if code := serve(r, http.MethodGet, "/fail").Code; code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, code)
+	}
+}
+
+func TestNilResponsesDoNotPanic(t *testing.T) {
+	r := NewRPCRouter()
+	AddHandler(r, MethodGet, "/nil", func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
+		return nil, nil
+	})
+	AddHandler(r, MethodGet, "/nil-body", func(req *http.Request) (*HttpResponse[any], *ErrorResponse) {
+		return &HttpResponse[any]{}, nil
+	})
+
+	recorder := serve(r, http.MethodGet, "/nil")
+	if recorder.Code != http.StatusNoContent || recorder.Body.Len() != 0 {
+		t.Fatalf("expected 204 with no body, got %d %q", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = serve(r, http.MethodGet, "/nil-body")
+	if recorder.Code != http.StatusOK || recorder.Body.String() != "null" {
+		t.Fatalf("expected 200 with null body, got %d %q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestErrorHandlerReturningNilFallsBackToDefault(t *testing.T) {
+	r := NewRPCRouter()
+	RegisterErrorHandler(r, func(req *http.Request, err *ErrorResponse) *HttpResponse[ErrorResponse] {
+		return nil
+	})
+	AddHandler(r, MethodGet, "/fail", func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
+		return nil, &ErrorResponse{StatusCode: http.StatusNotFound, Errors: []string{"missing"}}
+	})
+
+	recorder := serve(r, http.MethodGet, "/fail")
+	if recorder.Code != http.StatusNotFound || !strings.Contains(recorder.Body.String(), "missing") {
+		t.Fatalf("expected default 404 error response, got %d %q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestSuccessResponseSetsJSONContentType(t *testing.T) {
+	r := NewRPCRouter()
+	AddHandler(r, MethodGet, "/ok", okHandler)
+
+	if contentType := serve(r, http.MethodGet, "/ok").Header().Get("Content-Type"); contentType != "application/json" {
+		t.Fatalf("expected Content-Type application/json, got %q", contentType)
+	}
+}
+
+func TestErrorHandlerIsScopedPerRouterAndReadAtRequestTime(t *testing.T) {
+	type customError struct {
+		Message string `json:"message"`
+	}
+	custom := func(req *http.Request, err *ErrorResponse) *HttpResponse[customError] {
+		return &HttpResponse[customError]{StatusCode: http.StatusTeapot, Body: customError{Message: "custom"}}
+	}
+
+	r := NewRPCRouter()
+	AddHandler(r, MethodGet, "/before", failHandler)
+	RegisterErrorHandler(r, custom)
+	AddHandler(r, MethodGet, "/after", failHandler)
+
+	other := NewRPCRouter()
+	AddHandler(other, MethodGet, "/other", failHandler)
+
+	for _, url := range []string{"/before", "/after"} {
+		if code := serve(r, http.MethodGet, url).Code; code != http.StatusTeapot {
+			t.Fatalf("expected %s to use the registered error handler, got status %d", url, code)
+		}
+	}
+	if code := serve(other, http.MethodGet, "/other").Code; code != http.StatusInternalServerError {
+		t.Fatalf("expected other router to keep the default error response, got status %d", code)
+	}
+}
+
+func TestChildRouterErrorHandler(t *testing.T) {
+	rootHandler := func(req *http.Request, err *ErrorResponse) *HttpResponse[ErrorResponse] {
+		return &HttpResponse[ErrorResponse]{StatusCode: http.StatusBadRequest, Body: ErrorResponse{Errors: []string{"root"}}}
+	}
+	childHandler := func(req *http.Request, err *ErrorResponse) *HttpResponse[ErrorResponse] {
+		return &HttpResponse[ErrorResponse]{StatusCode: http.StatusConflict, Body: ErrorResponse{Errors: []string{"child"}}}
+	}
+
+	r := NewRPCRouter()
+	RegisterErrorHandler(r, rootHandler)
+	AddHandler(r, MethodGet, "/root", failHandler)
+	Route(r, "/child", func(c *RPCRouter) {
+		RegisterErrorHandler(c, childHandler)
+		AddHandler(c, MethodGet, "/fail", failHandler)
+	})
+	Group(r, func(g *RPCRouter) {
+		AddHandler(g, MethodGet, "/grouped", failHandler)
+	})
+
+	cases := map[string]int{"/root": http.StatusBadRequest, "/child/fail": http.StatusConflict, "/grouped": http.StatusBadRequest}
+	for url, want := range cases {
+		if code := serve(r, http.MethodGet, url).Code; code != want {
+			t.Fatalf("expected %s to return %d, got %d", url, want, code)
+		}
+	}
+
+	// The child's error type matches the root's, so the schema can be generated.
+	generateSchema(t, r)
+}
+
+func TestChildRouterErrorHandlerWithDifferentTypeFailsGeneration(t *testing.T) {
+	r := NewRPCRouter()
+	Route(r, "/child", func(c *RPCRouter) {
+		RegisterErrorHandler(c, func(req *http.Request, err *ErrorResponse) *HttpResponse[string] {
+			return &HttpResponse[string]{Body: "child"}
+		})
+		AddHandler(c, MethodGet, "/fail", failHandler)
+	})
+
+	_, err := typescript.Convert(r.routerTypes)
+	if err == nil || !strings.Contains(err.Error(), "only one error type") {
+		t.Fatalf("expected an error about the error type, got %v", err)
+	}
+}
+
+func TestRPCRouterIsHTTPHandler(t *testing.T) {
+	r := NewRPCRouter()
+	AddHandler(r, MethodGet, "/ok", okHandler)
+
+	var handler http.Handler = r
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/ok", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+}
+
+func TestSubRouterSupportsRouterFunctions(t *testing.T) {
+	hits := 0
+	sub := NewRPCSubRouter()
+	AddMiddlewares(sub, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			hits++
+			next.ServeHTTP(w, req)
+		})
+	})
+	RegisterErrorHandler(sub, func(r *http.Request, err *ErrorResponse) *HttpResponse[ErrorResponse] {
+		return &HttpResponse[ErrorResponse]{StatusCode: http.StatusConflict}
+	})
+	NotFound(sub, func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusGone)
+	})
+	Route(sub, "/nested", func(n *RPCRouter) {
+		AddHandler(n, MethodGet, "/{id}", okHandler)
+	})
+	Group(sub, func(g *RPCRouter) {
+		AddHandler(g, MethodGet, "/fail", failHandler)
+	})
+	inner := NewRPCSubRouter()
+	AddHandler(inner, MethodGet, "/deep", okHandler)
+	Mount(sub, "/inner", inner)
+
+	r := NewRPCRouter()
+	Mount(r, "/sub", sub)
+
+	cases := map[string]int{
+		"/sub/nested/7":   http.StatusOK,
+		"/sub/fail":       http.StatusConflict,
+		"/sub/inner/deep": http.StatusOK,
+		"/sub/missing":    http.StatusGone,
+	}
+	for url, want := range cases {
+		if code := serve(r, http.MethodGet, url).Code; code != want {
+			t.Fatalf("expected %s to return %d, got %d", url, want, code)
+		}
+	}
+	if hits != len(cases) {
+		t.Fatalf("expected the sub-router middleware to run %d times, ran %d times", len(cases), hits)
+	}
+
+	content := generateSchema(t, r)
+	for _, want := range []string{`"/sub/nested/:id"`, `"/sub/fail"`, `"/sub/inner/deep"`} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected schema to contain %s, got %s", want, content)
+		}
+	}
+}
+
+func TestMountCycleFailsGeneration(t *testing.T) {
+	a := NewRPCSubRouter()
+	b := NewRPCSubRouter()
+	Mount(a, "/b", b)
+	Mount(b, "/a", a)
+
+	r := NewRPCRouter()
+	Mount(r, "/a", a)
+
+	if _, err := typescript.Convert(r.routerTypes); err == nil || !strings.Contains(err.Error(), "mounted inside itself") {
+		t.Fatalf("expected a mount cycle error, got %v", err)
+	}
+}
+
+func TestSchemaNamesChirpcTypesByPackageName(t *testing.T) {
+	content := generateSchema(t, NewRPCRouter())
+	if !strings.Contains(content, "interface Chirpc__ErrorResponse") {
+		t.Fatalf("expected the error type to be named Chirpc__ErrorResponse, got %s", content)
 	}
 }

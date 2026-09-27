@@ -3,6 +3,7 @@ package rpc
 import (
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -41,158 +42,6 @@ func TestRouterRpcSchemas_RegisterHandler_ReturnsErrorForNonFunctionHandler(t *t
 	if _, err := r.RegisterHandler("post", "/invalid", 123); err == nil {
 		t.Fatalf("expected error when registering non-function handler")
 	}
-}
-
-func TestRouterRpcSchemas_ConvertToTs_GeneratesTypeScriptSchemaForSingleHandler(t *testing.T) {
-	r := NewRouterRpcSchemas()
-
-	handler := func(*http.Request) (*testHttpResponse[string], error) {
-		return nil, nil
-	}
-
-	if _, err := r.RegisterHandler("get", "/status", handler); err != nil {
-		t.Fatalf("unexpected error registering handler: %v", err)
-	}
-
-	out, err := r.ConvertToTs()
-	if err != nil {
-		t.Fatalf("ConvertToTs returned error: %v", err)
-	}
-
-	expectedString := `
-		export type ApiSchema = { "GET": { "/status": { response: string; }; }; };
-	`
-	testVerifyTsTypes(t, out, expectedString)
-}
-
-func TestRouterRpcSchemas_ConvertToTs_GeneratesNestedTypeScriptInterfacesFromMultipleHandlers(t *testing.T) {
-	r := NewRouterRpcSchemas()
-
-	userHandler := func(*http.Request) (*testHttpResponse[testUserProfile], error) {
-		return nil, nil
-	}
-
-	teamHandler := func(*http.Request) (*testHttpResponse[testTeamPayload], error) {
-		return nil, nil
-	}
-
-	if _, err := r.RegisterHandler("get", "/users/{id}", userHandler); err != nil {
-		t.Fatalf("registering user handler failed: %v", err)
-	}
-
-	if _, err := r.RegisterHandler("post", "/teams", teamHandler); err != nil {
-		t.Fatalf("registering team handler failed: %v", err)
-	}
-
-	out, err := r.ConvertToTs()
-	if err != nil {
-		t.Fatalf("ConvertToTs returned error: %v", err)
-	}
-
-	expectedString := `
-		interface Rpc__TestUserProfile {
-			Name:string;
-			Primary:Rpc__TestAddress;
-		}
-		interface Rpc__TestAddress {
-			Line1:string;
-			Zip:number;
-		}
-		interface Rpc__TestTeamPayload {
-			Owner:Rpc__TestUserProfile;
-			Members:Rpc__TestUserProfile[];
-		}
-		export type ApiSchema = {
-			"GET": {
-				"/users/:id": {
-					response: Rpc__TestUserProfile;
-				};
-			};
-			"POST": {
-				"/teams": {
-					response: Rpc__TestTeamPayload;
-				};
-			};
-		};
-	`
-
-	testVerifyTsTypes(t, out, expectedString)
-}
-
-func TestRouterRpcSchemas_ConvertToTs_GeneratesTypeScriptSchemaForMultipleHandlers(t *testing.T) {
-	r := NewRouterRpcSchemas()
-
-	userHandler := func(*http.Request) (*testHttpResponse[string], error) {
-		return nil, nil
-	}
-	teamHandler := func(*http.Request) (*testHttpResponse[int], error) {
-		return nil, nil
-	}
-
-	if _, err := r.RegisterHandler("get", "/users", userHandler); err != nil {
-		t.Fatalf("registering user handler failed: %v", err)
-	}
-
-	if _, err := r.RegisterHandler("post", "/teams", teamHandler); err != nil {
-		t.Fatalf("registering team handler failed: %v", err)
-	}
-
-	out, err := r.ConvertToTs()
-	if err != nil {
-		t.Fatalf("ConvertToTs returned error: %v", err)
-	}
-
-	expectedString := `
-		export type ApiSchema = {
-			"GET": {
-				"/users": {
-					response: string;
-				};
-			};
-			"POST": {
-				"/teams": {
-					response: number;
-				};
-			};
-		};
-	`
-	testVerifyTsTypes(t, out, expectedString)
-}
-
-// Types moved to test_helpers_test.go for reuse across tests.
-
-func TestRouterRpcSchemas_ConvertToTs_IncludesBodyQueryAndParamsInGeneratedSchema(t *testing.T) {
-	r := NewRouterRpcSchemas()
-
-	handler := func(*http.Request) (*testHttpResponse[string], error) { return nil, nil }
-
-	schema, err := r.RegisterHandler("post", "/users/{userId}", handler)
-	if err != nil {
-		t.Fatalf("unexpected error registering handler: %v", err)
-	}
-
-	schema.SetBodyType(testCreateReq{})
-	schema.SetQueryType(testSearchQ{})
-	schema.SetParamsType([]string{"userId"})
-
-	out, err := r.ConvertToTs()
-	if err != nil {
-		t.Fatalf("ConvertToTs returned error: %v", err)
-	}
-
-	expected := `
-		export type ApiSchema = {
-			"POST": {
-				"/users/:userId": {
-					params: { "userId": string; };
-					query?: { Filter:string; Limit:number; };
-					body: { Name:string; TagIds:number[]; };
-					response: string;
-				};
-			};
-		};
-	`
-	testVerifyTsTypes(t, out, expected)
 }
 
 func TestRouterRpcSchemas_RegisterHandler_AccumulatesMultipleHandlerSchemas(t *testing.T) {
@@ -259,75 +108,55 @@ func TestRouterRpcSchemas_RegisterHandler_ReturnsErrorForInvalidHandlerSignature
 	}
 }
 
-func TestRouterRpcSchemas_ConvertToTs_HandlesNoHandlers(t *testing.T) {
-	r := NewRouterRpcSchemas()
-	out, err := r.ConvertToTs()
+func TestRouterRpcSchemas_Routes_ResolvesMountedURLsAndParams(t *testing.T) {
+	root := NewRouterRpcSchemas()
+	child := NewRouterRpcSchemas()
+
+	handler := func(*http.Request) (*testHttpResponse[string], error) { return nil, nil }
+	errorHandler := func(*http.Request, error) *testHttpResponse[int] { return nil }
+
+	if err := root.RegisterErrorHandler(errorHandler); err != nil {
+		t.Fatalf("unexpected error registering error handler: %v", err)
+	}
+	schema, err := child.RegisterHandler("GET", "/posts/{postId:[0-9]+}", handler)
 	if err != nil {
-		t.Fatalf("ConvertToTs returned error: %v", err)
+		t.Fatalf("unexpected error registering handler: %v", err)
 	}
-	expected := "\nexport type ApiSchema = { };"
-	if out != expected {
-		t.Fatalf("expected output %q for no handlers, got %q", expected, out)
+	schema.SetBodyType(testCreateReq{})
+	root.Mount("/users/{userId}", child)
+
+	routes, err := root.Routes()
+	if err != nil {
+		t.Fatalf("Routes returned error: %v", err)
+	}
+	if len(routes) != 2 {
+		t.Fatalf("expected the error handler and one route, got %d", len(routes))
+	}
+
+	if routes[0].Method != "ERROR_HANDLER" || routes[0].URL != "/" {
+		t.Fatalf("expected the error handler first, got %+v", routes[0])
+	}
+
+	route := routes[1]
+	if route.URL != "/users/{userId}/posts/{postId:[0-9]+}" {
+		t.Fatalf("unexpected URL %q", route.URL)
+	}
+	if !reflect.DeepEqual(route.Params, []string{"userId", "postId"}) {
+		t.Fatalf("unexpected params %v", route.Params)
+	}
+	if route.Body != reflect.TypeOf(testCreateReq{}) {
+		t.Fatalf("unexpected body type %v", route.Body)
 	}
 }
 
-func TestRouterRpcSchemas_RegisterHandlers(t *testing.T) {
-	t.Run("adds multiple schemas to collection", func(t *testing.T) {
-		r := NewRouterRpcSchemas()
+func TestRouterRpcSchemas_Routes_RejectsMountCycles(t *testing.T) {
+	a := NewRouterRpcSchemas()
+	b := NewRouterRpcSchemas()
+	a.Mount("/b", b)
+	b.Mount("/a", a)
 
-		schema1 := NewHandlerSchema("GET", "/test1", reflect.TypeOf(""))
-		schema2 := NewHandlerSchema("POST", "/test2", reflect.TypeOf(""))
-		schemas := []*HandlerSchema{schema1, schema2}
-
-		r.RegisterHandlers(schemas)
-
-		if len(r.schemas) != 2 {
-			t.Errorf("expected 2 schemas, got %d", len(r.schemas))
-		}
-
-		if r.schemas[0] != schema1 {
-			t.Error("first schema should match")
-		}
-
-		if r.schemas[1] != schema2 {
-			t.Error("second schema should match")
-		}
-	})
-
-	t.Run("does nothing when schemas slice is empty", func(t *testing.T) {
-		r := NewRouterRpcSchemas()
-		r.RegisterHandlers([]*HandlerSchema{})
-
-		if len(r.schemas) != 0 {
-			t.Errorf("expected 0 schemas, got %d", len(r.schemas))
-		}
-	})
-}
-
-func TestRouterRpcSchemas_RegisterHandlerFrom(t *testing.T) {
-	r1 := NewRouterRpcSchemas()
-	r2 := NewRouterRpcSchemas()
-
-	handler := func(*http.Request) (*testHttpResponse[string], error) {
-		return nil, nil
-	}
-
-	// Register handlers in r2
-	schema1, _ := r2.RegisterHandler("GET", "/test1", handler)
-	schema2, _ := r2.RegisterHandler("POST", "/test2", handler)
-
-	// Register r2's handlers into r1
-	r1.RegisterHandlerFrom(r2)
-
-	if len(r1.schemas) != 2 {
-		t.Errorf("expected 2 schemas in r1, got %d", len(r1.schemas))
-	}
-
-	if r1.schemas[0] != schema1 {
-		t.Error("first schema should match")
-	}
-
-	if r1.schemas[1] != schema2 {
-		t.Error("second schema should match")
+	_, err := a.Routes()
+	if err == nil || !strings.Contains(err.Error(), "mounted inside itself") {
+		t.Fatalf("expected a mount cycle error, got %v", err)
 	}
 }

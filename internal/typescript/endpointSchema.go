@@ -1,10 +1,11 @@
-package rpc
+package typescript
 
 import (
 	"fmt"
 	"strings"
 
 	orderedmap "github.com/elliotchance/orderedmap/v3"
+	"github.com/iambpn/chirpc/internal/rpc"
 )
 
 // EndpointSchema manages a collection of RPC schemas organized by HTTP method and URL.
@@ -26,43 +27,51 @@ func (a *EndpointSchema) AddRpcSchema(method, url string, schema RpcSchema) {
 }
 
 // String returns a string representation of the RPC type as a TypeScript type definition.
+// Each method, URL, and member is written on its own line.
 func (a *EndpointSchema) String() string {
-	result := []string{}
+	var b strings.Builder
 	if a.shouldExport {
-		result = append(result, "export")
+		b.WriteString("export ")
 	}
-
-	result = append(result, "type ApiSchema = {")
+	b.WriteString("type ApiSchema = {\n")
 
 	for methodEl := a.types.Front(); methodEl != nil; methodEl = methodEl.Next() {
-		method := methodEl.Key
-		urls := methodEl.Value
-		result = append(result, fmt.Sprintf(`"%s": {`, strings.ToUpper(method)))
+		fmt.Fprintf(&b, "  %q: {\n", strings.ToUpper(methodEl.Key))
 
-		for urlEl := urls.Front(); urlEl != nil; urlEl = urlEl.Next() {
-			url := convertURLPattern(urlEl.Key)
+		for urlEl := methodEl.Value.Front(); urlEl != nil; urlEl = urlEl.Next() {
 			schema := urlEl.Value
-			result = append(result, fmt.Sprintf(`"%s": {`, url))
-			if schema.Param != "" {
-				result = append(result, fmt.Sprintf("params: %s;", schema.Param))
+			fmt.Fprintf(&b, "    %q: {\n", rpc.ColonPattern(urlEl.Key))
+
+			queryKey := "query?"
+			if schema.QueryRequired {
+				queryKey = "query"
 			}
-			if schema.Query != "" {
-				result = append(result, fmt.Sprintf("query?: %s;", schema.Query))
+			response := schema.Response
+			if response == "" {
+				response = "void"
 			}
-			if schema.Body != "" {
-				result = append(result, fmt.Sprintf("body: %s;", schema.Body))
-			}
-			if schema.Response != "" {
-				result = append(result, fmt.Sprintf("response: %s;", schema.Response))
-			} else {
-				result = append(result, "response: void;")
-			}
-			result = append(result, "};")
+
+			writeMember(&b, "params", schema.Param)
+			writeMember(&b, queryKey, schema.Query)
+			writeMember(&b, "body", schema.Body)
+			writeMember(&b, "response", response)
+			b.WriteString("    };\n")
 		}
-		result = append(result, "};")
+		b.WriteString("  };\n")
 	}
-	result = append(result, "};")
-	return strings.Join(result, " ")
+
+	b.WriteString("};\n")
+	return b.String()
+}
+
+// writeMember writes one ApiSchema member line. It skips empty values and indents
+// multi-line values so they line up with the member.
+func writeMember(b *strings.Builder, key, value string) {
+	if value == "" {
+		return
+	}
+	value = strings.ReplaceAll(strings.TrimSpace(value), "\n", "\n      ")
+	fmt.Fprintf(b, "      %s: %s;\n", key, value)
 }
 
 // NewEndpointSchema creates and returns a new EndpointSchema instance.

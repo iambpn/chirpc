@@ -1,4 +1,4 @@
-package rpc
+package typescript
 
 import (
 	"strings"
@@ -61,7 +61,7 @@ func TestAddRpcSchema_OverwritesExistingSchemaForSameMethodAndURL(t *testing.T) 
 func TestEndpointSchema_String_GeneratesExportedEmptyApiSchema(t *testing.T) {
 	rt := NewEndpointSchema(true)
 
-	expected := "export type ApiSchema = { };"
+	expected := "export type ApiSchema = {\n};\n"
 	if got := rt.String(); got != expected {
 		t.Fatalf("unexpected string output.\nexpected: %q\n     got: %q", expected, got)
 	}
@@ -79,8 +79,17 @@ func TestEndpointSchema_String_GeneratesCompleteSchemaWithAllFields(t *testing.T
 	rt.AddRpcSchema("post", "/users", schema)
 
 	expected := "type ApiSchema = { \"POST\": { \"/users\": { params: SomeParam; query?: SomeQuery; body: SomeBody; response: SomeResponse; }; }; };"
-	if got := rt.String(); got != expected {
+	if got := rt.String(); testCompact(got) != testCompact(expected) {
 		t.Fatalf("unexpected string output.\nexpected: %q\n     got: %q", expected, got)
+	}
+}
+
+func TestEndpointSchema_String_WritesRequiredQuery(t *testing.T) {
+	rt := NewEndpointSchema(false)
+	rt.AddRpcSchema("get", "/search", RpcSchema{Query: "Q", QueryRequired: true, Response: "R"})
+
+	if got := rt.String(); !strings.Contains(got, "query: Q;") {
+		t.Fatalf("expected a required query member, got %q", got)
 	}
 }
 

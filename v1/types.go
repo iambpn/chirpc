@@ -32,33 +32,20 @@ type ErrorHandlerType[T any] = func(*http.Request, *ErrorResponse) *HttpResponse
 type RequestHandler[T any] func(*http.Request) (*HttpResponse[T], *ErrorResponse)
 
 // ServeHTTPWithErrorHandler wraps the RequestHandler with error handling logic.
-// If an error occurs, it uses the provided errorHandler to generate a response.
-// If errorHandler is nil, it returns a 500 Internal Server Error.
+// If an error occurs, it uses errorHandler, or when that is nil, the error handler of the
+// router serving the request. Without either, it sends the ErrorResponse with its own
+// status code, or 500 when that is not set. A nil response with no error sends 204 No Content.
 func (rh RequestHandler[T]) ServeHTTPWithErrorHandler(errorHandler ErrorHandlerType[any]) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		resp, errResp := rh(r)
 
 		if errResp != nil {
-			if errorHandler != nil {
-				resp := errorHandler(r, errResp)
+			sendError(w, r, errResp, errorHandler)
+			return
+		}
 
-				if resp.StatusCode == 0 {
-					resp.StatusCode = http.StatusInternalServerError
-				}
-
-				sendResponse(w, resp)
-				return
-			}
-
-			// if error handler is not set, then return default Error response with status code 500
-			defaultHttpResp := &HttpResponse[*ErrorResponse]{
-				StatusCode: http.StatusInternalServerError,
-				Body:       errResp,
-				Headers: map[string]string{
-					"Content-Type": "application/json",
-				},
-			}
-			sendResponse(w, defaultHttpResp)
+		if resp == nil {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
@@ -67,4 +54,37 @@ func (rh RequestHandler[T]) ServeHTTPWithErrorHandler(errorHandler ErrorHandlerT
 		}
 		sendResponse(w, resp)
 	}
+}
+
+// sendError writes the response for errResp. It uses errorHandler when set, or else the
+// router's error handler from the request context. It falls back to sending errResp
+// itself when there is no error handler or the error handler returns nil. When the
+// error handler's response has no status code, the ErrorResponse status code is used.
+func sendError(w http.ResponseWriter, r *http.Request, errResp *ErrorResponse, errorHandler ErrorHandlerType[any]) {
+	if errorHandler == nil {
+		errorHandler = errorHandlerFromContext(r.Context())
+	}
+
+	if errorHandler != nil {
+		if resp := errorHandler(r, errResp); resp != nil {
+			if resp.StatusCode == 0 {
+				resp.StatusCode = errorStatusCode(errResp)
+			}
+			sendResponse(w, resp)
+			return
+		}
+	}
+
+	sendResponse(w, &HttpResponse[*ErrorResponse]{
+		StatusCode: errorStatusCode(errResp),
+		Body:       errResp,
+	})
+}
+
+// errorStatusCode returns the status code set on errResp, or 500 when it is not set.
+func errorStatusCode(errResp *ErrorResponse) int {
+	if errResp.StatusCode == 0 {
+		return http.StatusInternalServerError
+	}
+	return errResp.StatusCode
 }

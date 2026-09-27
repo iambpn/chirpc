@@ -1,4 +1,4 @@
-package rpc
+package typescript
 
 import (
 	"reflect"
@@ -49,7 +49,7 @@ func TestGutsConverterUsesCompilerASTAndChirpcTags(t *testing.T) {
 	}
 	compactOutput := compact(output)
 	checks := []string{
-		"Rpc__ConverterEmbedded & {",
+		"Typescript__ConverterEmbedded & {",
 		"tsName: number;",
 		`"dashed-name": string;`,
 		"Raw: Date | null;",
@@ -75,7 +75,7 @@ func TestGutsConverterUsesCompilerASTAndChirpcTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(declarations) != 1 || !strings.Contains(declarations[0], "interface Rpc__ConverterEmbedded") {
+	if len(declarations) != 1 || !strings.Contains(declarations[0], "interface Typescript__ConverterEmbedded") {
 		t.Fatalf("expected embedded declaration, got %#v", declarations)
 	}
 }
@@ -98,7 +98,7 @@ func TestGutsConverterResponseTypeAndNamedReuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first != "Rpc__ConverterEmbedded" || second != first {
+	if first != "Typescript__ConverterEmbedded" || second != first {
 		t.Fatalf("unexpected response types: %q and %q", first, second)
 	}
 
@@ -120,4 +120,44 @@ func TestGutsConverterRejectsResponseWithoutBody(t *testing.T) {
 	if _, err := converter.responseType(reflect.TypeOf(struct{ Value string }{})); err == nil {
 		t.Fatal("expected response without Body to fail")
 	}
+}
+
+func TestPackageNameSkipsMajorVersion(t *testing.T) {
+	cases := map[string]string{
+		"github.com/iambpn/chirpc/v1":    "chirpc",
+		"github.com/acme/api/v12":        "api",
+		"github.com/acme/models":         "models",
+		"github.com/acme/version/vendor": "vendor",
+		"v2":                             "v2",
+		"github.com/acme/v2beta":         "v2beta",
+	}
+	for importPath, want := range cases {
+		if got := packageName(importPath); got != want {
+			t.Errorf("packageName(%q) = %q, want %q", importPath, got, want)
+		}
+	}
+}
+
+func TestHasRequiredField(t *testing.T) {
+	type optionalEmbedded struct {
+		Page int `json:"page,omitempty"`
+	}
+	type allOptional struct {
+		optionalEmbedded
+		Filter  string `tsOptional:"true"`
+		Skipped string `json:"-"`
+		hidden  string
+	}
+	type withRequired struct {
+		optionalEmbedded
+		Filter string `json:"filter"`
+	}
+
+	if hasRequiredField(reflect.TypeOf(allOptional{}), map[reflect.Type]bool{}) {
+		t.Error("expected allOptional to have no required field")
+	}
+	if !hasRequiredField(reflect.TypeOf(&withRequired{}), map[reflect.Type]bool{}) {
+		t.Error("expected withRequired to have a required field")
+	}
+	_ = allOptional{}.hidden
 }

@@ -1,8 +1,8 @@
 build:
-	go build -o build/example cmd/example/main.go
+	go build -o build/example ./cmd/example/server
 
 clean:
-	go clean && rm -f build/
+	go clean && rm -rf build/
 
 run-server:
 	go run cmd/example/server/main.go
@@ -16,4 +16,4 @@ test-v:
 html-coverage:
 	go tool cover -html=coverage.out -o coverage.html
 
-.PHONY: run clean build test
+.PHONY: build clean run-server test test-v html-coverage

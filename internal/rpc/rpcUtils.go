@@ -2,19 +2,20 @@ package rpc
 
 import (
 	"errors"
-	"fmt"
 	"reflect"
+	"strings"
 )
 
-// convertURLPattern converts a URL pattern with curly braces to a colon-prefixed slug format.
-func convertURLPattern(input string) string {
+// ColonPattern converts a URL pattern with curly braces to a colon-prefixed slug format.
+// A chi regex after the slug name is dropped, so "/{id:[0-9]+}" becomes "/:id".
+func ColonPattern(input string) string {
 	var result []rune
 	braces := 0
 	var buffer []rune
 
 	for _, r := range input {
-		switch r {
-		case '{':
+		switch {
+		case r == '{':
 			if braces == 0 {
 				buffer = buffer[:0] // reset buffer for a new slug section
 			}
@@ -22,13 +23,13 @@ func convertURLPattern(input string) string {
 			if braces > 1 {
 				buffer = append(buffer, r)
 			}
-		case '}':
+		case r == '}' && braces > 0:
 			braces--
 			if braces == 0 {
 				// flush buffered content as :slug...
 				result = append(result, ':')
-				result = append(result, buffer...)
-			} else if braces > 0 {
+				result = append(result, []rune(slugName(string(buffer)))...)
+			} else {
 				buffer = append(buffer, r)
 			}
 		default:
@@ -41,6 +42,65 @@ func convertURLPattern(input string) string {
 	}
 
 	return string(result)
+}
+
+// parseURLSlugs returns the names of the chi path parameters in url, in the order they appear.
+// Braces inside a parameter, as in "{code:[a-z]{3}}", belong to that parameter.
+func parseURLSlugs(url string) []string {
+	slugs := []string{}
+	braces := 0
+	var buffer []rune
+
+	for _, r := range url {
+		switch {
+		case r == '{':
+			if braces > 0 {
+				buffer = append(buffer, r)
+			}
+			braces++
+		case r == '}' && braces > 0:
+			braces--
+			if braces == 0 {
+				slugs = append(slugs, slugName(string(buffer)))
+				buffer = buffer[:0]
+			} else {
+				buffer = append(buffer, r)
+			}
+		case braces > 0:
+			buffer = append(buffer, r)
+		}
+	}
+
+	return slugs
+}
+
+// slugName returns the parameter name from a chi slug, without the optional ":regex" part.
+func slugName(slug string) string {
+	name, _, _ := strings.Cut(slug, ":")
+	return name
+}
+
+// mergePaths combines a base path and relative path into a single path,
+// handling trailing and leading slashes appropriately.
+func mergePaths(basePath, relativePath string) string {
+	if basePath == "" {
+		return relativePath
+	}
+	if relativePath == "" {
+		return basePath
+	}
+
+	hasBaseSlash := basePath[len(basePath)-1] == '/'
+	hasRelativeSlash := relativePath[0] == '/'
+
+	switch {
+	case hasBaseSlash && hasRelativeSlash:
+		return basePath + relativePath[1:]
+	case !hasBaseSlash && !hasRelativeSlash:
+		return basePath + "/" + relativePath
+	default:
+		return basePath + relativePath
+	}
 }
 
 // extractReturnType returns the first (non-pointer) return type of a function.
@@ -86,19 +146,4 @@ func BuildGoToTsSchema(method, url string, fnVal any) (*HandlerSchema, error) {
 	schema := NewHandlerSchema(method, url, retType)
 
 	return schema, nil
-}
-
-// sliceToTsInf builds a TypeScript interface string mapping each slug to string,
-// or returns 'never' if the slice is empty.
-func sliceToTsInf(slice []string) string {
-	if len(slice) == 0 {
-		return "never"
-	}
-
-	inf := ""
-	for _, s := range slice {
-		inf += fmt.Sprintf(`"%s": string;`, s)
-	}
-
-	return fmt.Sprintf("{ %s }", inf)
 }

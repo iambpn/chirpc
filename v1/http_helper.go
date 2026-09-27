@@ -14,31 +14,49 @@ Helper functions for handling HTTP responses.
 
 // sendResponse writes the provided HttpResponse to the ResponseWriter by setting
 // headers, marshalling the body to JSON when possible, and writing the status code.
+// Content-Type is set to application/json unless resp.Headers sets it.
+// Status codes that do not allow a body, such as 204, are sent without one.
 // If JSON marshalling fails or the body is not marshallable, it writes an HTTP 500 error.
 func sendResponse[T any](w http.ResponseWriter, resp *HttpResponse[T]) {
 	for k, v := range resp.Headers {
 		w.Header().Set(k, v)
 	}
 
+	if !bodyAllowed(resp.StatusCode) {
+		w.WriteHeader(resp.StatusCode)
+		return
+	}
+
 	tType := reflect.TypeOf(resp.Body)
 
-	if tType.Kind() == reflect.Pointer {
+	if tType != nil && tType.Kind() == reflect.Pointer {
 		tType = tType.Elem()
 	}
 
-	if isJSONMarshable(tType.Kind()) {
+	// A nil interface body has no type, and it is sent as JSON null.
+	if tType == nil || isJSONMarshable(tType.Kind()) {
 		outBytes, err := json.Marshal(resp.Body)
 		if err != nil {
 			http.Error(w, "an error occurred while marshalling payload", http.StatusInternalServerError)
 			return
 		}
 
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "application/json")
+		}
 		w.WriteHeader(resp.StatusCode)
 		w.Write(outBytes)
 		return
 	}
 
 	http.Error(w, "payload is not marshallable", http.StatusInternalServerError)
+}
+
+// bodyAllowed reports whether a response with this status code may have a body.
+func bodyAllowed(statusCode int) bool {
+	return statusCode >= http.StatusOK &&
+		statusCode != http.StatusNoContent &&
+		statusCode != http.StatusNotModified
 }
 
 // isJSONMarshable reports whether the given reflect.Kind can be marshaled to JSON

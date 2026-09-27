@@ -1,4 +1,4 @@
-package rpc
+package typescript
 
 import (
 	"fmt"
@@ -303,16 +303,40 @@ func (c *gutsConverter) serialize(node bindings.Node) (string, error) {
 	return result, nil
 }
 
+// typeName returns the TypeScript name of a named Go type. Types outside package main
+// are prefixed with their package name, so the same type name in two packages stays distinct.
 func (c *gutsConverter) typeName(typ reflect.Type) string {
 	pkg := typ.PkgPath()
 	name := exportedIdentifier(typ.Name())
 	if pkg == "" || strings.EqualFold(pkg, "main") {
 		return name
 	}
-	if slash := strings.LastIndex(pkg, "/"); slash >= 0 {
-		pkg = pkg[slash+1:]
+	return exportedIdentifier(packageName(pkg)) + "__" + name
+}
+
+// packageName guesses the package name from an import path. It uses the last path
+// element, or the one before it when the last is a major version such as "v2",
+// which is how Go names packages in versioned module paths.
+func packageName(importPath string) string {
+	elements := strings.Split(importPath, "/")
+	name := elements[len(elements)-1]
+	if len(elements) > 1 && isMajorVersion(name) {
+		name = elements[len(elements)-2]
 	}
-	return exportedIdentifier(pkg) + "__" + name
+	return name
+}
+
+// isMajorVersion reports whether element looks like "v1", "v2", and so on.
+func isMajorVersion(element string) bool {
+	if len(element) < 2 || element[0] != 'v' {
+		return false
+	}
+	for _, r := range element[1:] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func fieldName(field reflect.StructField) string {
@@ -328,6 +352,37 @@ func fieldName(field reflect.StructField) string {
 func isFieldOptional(field reflect.StructField) bool {
 	return strings.EqualFold(field.Tag.Get(structTagOptional), "true") ||
 		hasJSONOption(field, "omitempty") || hasJSONOption(field, "omitzero")
+}
+
+// hasRequiredField reports whether the generated type for the struct typ has a required
+// member. It follows the same rules as structMembers, including embedded structs.
+// seen holds the embedded structs already checked, to stop on recursive embedding.
+func hasRequiredField(typ reflect.Type, seen map[reflect.Type]bool) bool {
+	typ = dereference(typ)
+	if typ == nil || typ.Kind() != reflect.Struct || seen[typ] {
+		return false
+	}
+	seen[typ] = true
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if isFieldOmitted(field) {
+			continue
+		}
+		if field.Anonymous && field.Tag.Get("json") == "" {
+			if hasRequiredField(field.Type, seen) {
+				return true
+			}
+			continue
+		}
+		if field.PkgPath != "" {
+			continue
+		}
+		if !isFieldOptional(field) {
+			return true
+		}
+	}
+	return false
 }
 
 func isFieldOmitted(field reflect.StructField) bool {

@@ -148,3 +148,28 @@ func TestIsJSONMarshable(t *testing.T) {
 		}
 	}
 }
+
+func TestSendResponse_SkipsBodyForNoContent(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	sendResponse(recorder, &HttpResponse[*struct{}]{StatusCode: http.StatusNoContent})
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, recorder.Code)
+	}
+	if recorder.Body.Len() != 0 {
+		t.Fatalf("expected no body, got %q", recorder.Body.String())
+	}
+}
+
+func TestSendResponse_KeepsCustomContentType(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	sendResponse(recorder, &HttpResponse[string]{
+		StatusCode: http.StatusOK,
+		Body:       "ok",
+		Headers:    map[string]string{"Content-Type": "application/vnd.api+json"},
+	})
+
+	if got := recorder.Header().Get("Content-Type"); got != "application/vnd.api+json" {
+		t.Fatalf("expected custom Content-Type, got %q", got)
+	}
+}

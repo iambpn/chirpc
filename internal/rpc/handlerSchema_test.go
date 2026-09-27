@@ -54,7 +54,7 @@ func TestHandlerSchema_SetBodyType_AcceptsStructPointer(t *testing.T) {
 	}
 }
 
-func TestHandlerSchema_SetBodyType_IgnoresNonStructTypes(t *testing.T) {
+func TestHandlerSchema_SetBodyType_PanicsForNonStructTypes(t *testing.T) {
 	r := NewRouterRpcSchemas()
 
 	handler := func(*http.Request) (*testHttpResponse[string], error) { return nil, nil }
@@ -64,8 +64,12 @@ func TestHandlerSchema_SetBodyType_IgnoresNonStructTypes(t *testing.T) {
 		t.Fatalf("unexpected error registering handler: %v", err)
 	}
 
-	// attempt to set a non-struct body; should be ignored
-	schema.SetBodyType(123)
+	testExpectPanic(t, "body type must be a struct or a pointer to a struct, but got int", func() {
+		schema.SetBodyType(123)
+	})
+	testExpectPanic(t, "but got <nil>", func() {
+		schema.SetBodyType(nil)
+	})
 
 	if schema.bodyType != nil {
 		t.Fatalf("expected bodyType to remain nil when non-struct provided")
@@ -118,7 +122,7 @@ func TestHandlerSchema_SetQueryType_AcceptsStructPointer(t *testing.T) {
 	}
 }
 
-func TestHandlerSchema_SetQueryType_IgnoresNonStructTypes(t *testing.T) {
+func TestHandlerSchema_SetQueryType_PanicsForNonStructTypes(t *testing.T) {
 	r := NewRouterRpcSchemas()
 
 	handler := func(*http.Request) (*testHttpResponse[string], error) { return nil, nil }
@@ -128,25 +132,33 @@ func TestHandlerSchema_SetQueryType_IgnoresNonStructTypes(t *testing.T) {
 		t.Fatalf("unexpected error registering handler: %v", err)
 	}
 
-	// attempt to set a non-struct query; should be ignored
-	schema.SetQueryType("not a struct")
+	testExpectPanic(t, "query type must be a struct or a pointer to a struct, but got string", func() {
+		schema.SetQueryType("not a struct")
+	})
 
 	if schema.queryType != nil {
 		t.Fatalf("expected queryType to remain nil when non-struct provided")
 	}
 }
 
-func TestHandlerSchema_SetParamsType_GeneratesTypeScriptInterfaceFromStringSlice(t *testing.T) {
+func TestHandlerSchema_SetParamsType_StoresParamNames(t *testing.T) {
 	s := &HandlerSchema{}
 	s.SetParamsType([]string{"userId", "teamId"})
 
-	if s.paramsType == "" {
-		t.Fatalf("expected paramsType to be set")
+	expected := []string{"userId", "teamId"}
+	if !reflect.DeepEqual(s.params, expected) {
+		t.Fatalf("expected params %v, got %v", expected, s.params)
 	}
+}
 
-	expected := `{ "userId": string;"teamId": string; }`
-	if s.paramsType != expected {
-		t.Fatalf("expected paramsType %q, got %q", expected, s.paramsType)
+func TestHandlerSchema_ParamNames_CombinesURLAndExtraParams(t *testing.T) {
+	s := &HandlerSchema{}
+	s.SetParamsType([]string{"teamId", "extra"})
+
+	got := s.paramNames("/teams/{teamId}/users/{userId:[0-9]+}")
+	expected := []string{"teamId", "userId", "extra"}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("expected params %v, got %v", expected, got)
 	}
 }
 
@@ -232,7 +244,7 @@ func TestNewHandlerSchema_InitializesOtherFieldsAsZeroValues(t *testing.T) {
 		t.Fatalf("expected queryType to be nil, got %v", schema.queryType)
 	}
 
-	if schema.paramsType != "" {
-		t.Fatalf("expected paramsType to be empty string, got %q", schema.paramsType)
+	if schema.params != nil {
+		t.Fatalf("expected params to be nil, got %v", schema.params)
 	}
 }

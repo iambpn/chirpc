@@ -2,18 +2,17 @@ package rpc
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 )
 
 // HandlerSchema represents RPC handler metadata used to generate TypeScript types.
-// It stores HTTP method, URL, and Go types for return, body, query, and path params.
+// It stores HTTP method, URL, Go types for return, body, and query, and extra path param names.
 type HandlerSchema struct {
 	method     string
 	url        string
 	returnType reflect.Type
 	bodyType   reflect.Type
-	paramsType string
+	params     []string
 	queryType  reflect.Type
 }
 
@@ -28,42 +27,52 @@ func (p *HandlerSchema) URL() string {
 }
 
 // SetBodyType assigns a struct type (value or pointer) as the request body type.
-// Non-struct inputs are ignored with a warning to stderr.
+// It panics for any other input.
 func (p *HandlerSchema) SetBodyType(body any) {
-	bodyType := reflect.TypeOf(body)
-
-	if bodyType.Kind() == reflect.Pointer {
-		bodyType = bodyType.Elem()
-	}
-
-	if bodyType.Kind() != reflect.Struct {
-		fmt.Fprintf(os.Stderr, "Warning: body type must be a struct, got %s, skipping setting body type\n", bodyType.String())
-		return
-	}
-
-	p.bodyType = bodyType
+	p.bodyType = structType(body, "body")
 }
 
 // SetQueryType assigns a struct type (value or pointer) as the query type.
-// Non-struct inputs are ignored with a warning to stderr.
+// It panics for any other input.
 func (p *HandlerSchema) SetQueryType(query any) {
-	queryType := reflect.TypeOf(query)
-
-	if queryType.Kind() == reflect.Pointer {
-		queryType = queryType.Elem()
-	}
-
-	if queryType.Kind() != reflect.Struct {
-		fmt.Fprintf(os.Stderr, "Warning: query type is not a struct (got %s), skipping setting query type\n", queryType.String())
-		return
-	}
-
-	p.queryType = queryType
+	p.queryType = structType(query, "query")
 }
 
-// SetParamsType converts path param slugs into a TypeScript interface shape and stores it on the schema.
+// structType returns the struct type of value, which may be a struct or a pointer to one.
+// It panics for any other value, because the generated schema would silently miss the type.
+func structType(value any, use string) reflect.Type {
+	typ := reflect.TypeOf(value)
+	for typ != nil && typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	if typ == nil || typ.Kind() != reflect.Struct {
+		panic(fmt.Sprintf("chirpc: the %s type must be a struct or a pointer to a struct, but got %T.", use, value))
+	}
+	return typ
+}
+
+// SetParamsType stores extra path param names for this handler.
+// Params found in the full route URL are always included, so these are only needed
+// for params that the URL pattern does not show.
 func (p *HandlerSchema) SetParamsType(slugs []string) {
-	p.paramsType = sliceToTsInf(slugs)
+	p.params = slugs
+}
+
+// paramNames returns the path params for the handler served at fullURL.
+// It lists the params in fullURL first, then any extra params set with SetParamsType.
+func (p *HandlerSchema) paramNames(fullURL string) []string {
+	names := parseURLSlugs(fullURL)
+	seen := make(map[string]bool, len(names))
+	for _, name := range names {
+		seen[name] = true
+	}
+	for _, name := range p.params {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // NewHandlerSchema creates a new HandlerSchema with the specified method, URL, and return type.

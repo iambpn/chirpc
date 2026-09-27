@@ -8,7 +8,7 @@ import (
 
 func TestConvertURLPattern_ConvertsSingleBracedParameterToColonSyntax(t *testing.T) {
 	in := "/users/{id}"
-	out := convertURLPattern(in)
+	out := ColonPattern(in)
 	if out != "/users/:id" {
 		t.Fatalf("unexpected conversion: %q -> %q", in, out)
 	}
@@ -16,7 +16,7 @@ func TestConvertURLPattern_ConvertsSingleBracedParameterToColonSyntax(t *testing
 
 func TestConvertURLPattern_ConvertsMultipleBracedParametersToColonSyntax(t *testing.T) {
 	in := "/a/{id}/b/{slug}"
-	out := convertURLPattern(in)
+	out := ColonPattern(in)
 	if out != "/a/:id/b/:slug" {
 		t.Fatalf("unexpected conversion: %q -> %q", in, out)
 	}
@@ -24,7 +24,7 @@ func TestConvertURLPattern_ConvertsMultipleBracedParametersToColonSyntax(t *test
 
 func TestConvertURLPattern_HandlesNestedBracesWithinParameter(t *testing.T) {
 	in := "/x/{a{b}c}/y"
-	out := convertURLPattern(in)
+	out := ColonPattern(in)
 	if out != "/x/:a{b}c/y" {
 		t.Fatalf("unexpected conversion with nested braces: %q -> %q", in, out)
 	}
@@ -64,34 +64,9 @@ func TestExtractReturnType_ReturnsErrorWhenFunctionHasNoReturnValues(t *testing.
 	}
 }
 
-func TestSliceToTsInf_GeneratesTypeScriptInterfaceFromStringSlice(t *testing.T) {
-	t.Run("returns never for empty slice", func(t *testing.T) {
-		got := sliceToTsInf([]string{})
-		if got != "never" {
-			t.Fatalf("expected never, got %q", got)
-		}
-	})
-
-	t.Run("generates interface with string properties for non-empty slice", func(t *testing.T) {
-		got := sliceToTsInf([]string{"id", "postId"})
-		expected := `{ "id": string;"postId": string; }`
-		if got != expected {
-			t.Fatalf("expected %q, got %q", expected, got)
-		}
-	})
-
-	t.Run("generates interface with single property", func(t *testing.T) {
-		got := sliceToTsInf([]string{"userId"})
-		expected := `{ "userId": string; }`
-		if got != expected {
-			t.Fatalf("expected %q, got %q", expected, got)
-		}
-	})
-}
-
 func TestConvertURLPattern_HandlesNoParameters(t *testing.T) {
 	in := "/users/list"
-	out := convertURLPattern(in)
+	out := ColonPattern(in)
 	if out != "/users/list" {
 		t.Fatalf("expected no change for URL without parameters: %q -> %q", in, out)
 	}
@@ -99,7 +74,7 @@ func TestConvertURLPattern_HandlesNoParameters(t *testing.T) {
 
 func TestConvertURLPattern_HandlesEmptyString(t *testing.T) {
 	in := ""
-	out := convertURLPattern(in)
+	out := ColonPattern(in)
 	if out != "" {
 		t.Fatalf("expected empty string, got %q", out)
 	}
@@ -107,7 +82,7 @@ func TestConvertURLPattern_HandlesEmptyString(t *testing.T) {
 
 func TestConvertURLPattern_HandlesRootPath(t *testing.T) {
 	in := "/"
-	out := convertURLPattern(in)
+	out := ColonPattern(in)
 	if out != "/" {
 		t.Fatalf("expected root path unchanged: %q -> %q", in, out)
 	}
@@ -115,7 +90,7 @@ func TestConvertURLPattern_HandlesRootPath(t *testing.T) {
 
 func TestConvertURLPattern_HandlesConsecutiveParameters(t *testing.T) {
 	in := "/api/{category}/{id}"
-	out := convertURLPattern(in)
+	out := ColonPattern(in)
 	if out != "/api/:category/:id" {
 		t.Fatalf("unexpected conversion: %q -> %q", in, out)
 	}
@@ -226,5 +201,62 @@ func TestBuildGoToTsSchema_HandlesPointerHandler(t *testing.T) {
 	expectedType := reflect.TypeOf(testHttpResponse[testCreateReq]{})
 	if schema.returnType != expectedType {
 		t.Fatalf("expected return type %v, got %v", expectedType, schema.returnType)
+	}
+}
+
+func TestConvertURLPattern_DropsRegexFromParameters(t *testing.T) {
+	in := "/re/{id:[0-9]+}/{code:[a-z]{3}}/{x}"
+	out := ColonPattern(in)
+	if out != "/re/:id/:code/:x" {
+		t.Fatalf("unexpected conversion: %q -> %q", in, out)
+	}
+}
+
+func TestParseURLSlugs(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"/users/{id}", []string{"id"}},
+		{"{one}", []string{"one"}},
+		{"/{user}/{id}", []string{"user", "id"}},
+		{"/no/slugs/here", []string{}},
+		{"", []string{}},
+		{"/re/{id:[0-9]+}", []string{"id"}},
+		{"/re/{code:[a-z]{3}}/{x}", []string{"code", "x"}},
+		{"/stray}/{id}", []string{"id"}},
+	}
+
+	for _, c := range cases {
+		got := parseURLSlugs(c.in)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("parseURLSlugs(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+func TestMergePaths(t *testing.T) {
+	cases := []struct {
+		base     string
+		relative string
+		want     string
+	}{
+		{"", "/foo", "/foo"},
+		{"/foo", "", "/foo"},
+		{"/foo/", "/bar", "/foo/bar"},
+		{"/foo", "bar", "/foo/bar"},
+		{"/foo/", "/bar/", "/foo/bar/"},
+		{"/foo", "/bar", "/foo/bar"},
+		{"/foo/", "bar", "/foo/bar"},
+		{"/foo", "bar/", "/foo/bar/"},
+		{"foo", "bar", "foo/bar"},
+		{"foo/", "/bar", "foo/bar"},
+	}
+
+	for _, c := range cases {
+		got := mergePaths(c.base, c.relative)
+		if got != c.want {
+			t.Errorf("mergePaths(%q, %q) = %q, want %q", c.base, c.relative, got, c.want)
+		}
 	}
 }

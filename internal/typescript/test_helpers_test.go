@@ -1,7 +1,6 @@
-package rpc
+package typescript
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 	"unicode"
@@ -40,39 +39,26 @@ type testSearchQ struct {
 	Limit  int
 }
 
+type testOptionalQ struct {
+	Filter string `json:"filter,omitempty"`
+	Limit  int    `tsOptional:"true"`
+}
+
+// testCompact removes all whitespace so TypeScript output can be compared regardless of formatting.
+func testCompact(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, value)
+}
+
 // testVerifyTsTypes normalizes whitespace and compares TypeScript output strings.
 func testVerifyTsTypes(t *testing.T, types string, expectedTypes string) {
 	t.Helper()
 
-	normalize := func(value string) string {
-		return strings.Map(func(r rune) rune {
-			if unicode.IsSpace(r) {
-				return -1
-			}
-			return r
-		}, value)
-	}
-
-	types = normalize(types)
-	expectedTypes = normalize(expectedTypes)
-
-	if types != expectedTypes {
+	if testCompact(types) != testCompact(expectedTypes) {
 		t.Fatalf("expected output \n%s\n, got \n%s\n", expectedTypes, types)
 	}
-}
-
-// testExpectPanic fails the test unless fn panics with a message containing want.
-func testExpectPanic(t *testing.T, want string, fn func()) {
-	t.Helper()
-	defer func() {
-		t.Helper()
-		recovered := recover()
-		if recovered == nil {
-			t.Fatalf("expected a panic containing %q, got none", want)
-		}
-		if message := fmt.Sprint(recovered); !strings.Contains(message, want) {
-			t.Fatalf("expected a panic containing %q, got %q", want, message)
-		}
-	}()
-	fn()
 }

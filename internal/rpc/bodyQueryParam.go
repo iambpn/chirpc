@@ -1,58 +1,47 @@
 package rpc
 
-import (
-	"fmt"
-	"os"
-)
-
 // BodyQueryParamType holds schema metadata for request body, query string, and path parameters.
 // It is used to fluently declare the expected types for an RPC handler.
-// A nil Schema causes its mutator methods to become no-ops (with a warning logged).
+// Its methods panic when Schema is nil, because the types would be lost.
 type BodyQueryParamType struct {
 	Schema *HandlerSchema
 }
 
 // BodyType registers the concrete Go type (or example instance) that represents
-// the HTTP request body for this RPC. If Schema is nil it prints a warning and
-// performs no action. Returns the receiver to allow method chaining.
+// the HTTP request body for this RPC. It panics when body is not a struct or a
+// pointer to a struct. Returns the receiver to allow method chaining.
 func (b *BodyQueryParamType) BodyType(body any) *BodyQueryParamType {
-	if b.Schema == nil {
-		fmt.Fprintf(os.Stderr, "Warning: Cannot set body type because Schema is nil (check for handler registration errors)")
-		return b
-	}
-
+	b.requireSchema("BodyType")
 	b.Schema.SetBodyType(body)
 	return b
 }
 
 // QueryType registers the concrete Go type (or example instance) that represents
-// the URL query string parameters for this RPC. If Schema is nil it prints a warning
-// and performs no action. Returns the receiver to allow method chaining.
+// the URL query string parameters for this RPC. It panics when query is not a struct
+// or a pointer to a struct. Returns the receiver to allow method chaining.
 func (b *BodyQueryParamType) QueryType(query any) *BodyQueryParamType {
-	if b.Schema == nil {
-		fmt.Fprintf(os.Stderr, "Warning: Cannot set query type because Schema is nil (check for handler registration errors)")
-		return b
-	}
-
+	b.requireSchema("QueryType")
 	b.Schema.SetQueryType(query)
 	return b
 }
 
-// Params sets the expected URL path parameter slugs on the underlying schema.
-// It is a no-op when slugs is empty or when Schema is nil (a warning is printed).
-// Returns the receiver to allow method chaining.
+// Params sets extra URL path parameter names on the underlying schema.
+// It is a no-op when slugs is empty. Returns the receiver to allow method chaining.
 func (b *BodyQueryParamType) Params(slugs []string) *BodyQueryParamType {
 	if len(slugs) == 0 {
 		return b
 	}
 
-	if b.Schema == nil {
-		fmt.Fprintf(os.Stderr, "Warning: Cannot set params type because Schema is nil (check for handler registration errors)")
-		return b
-	}
-
+	b.requireSchema("Params")
 	b.Schema.SetParamsType(slugs)
 	return b
+}
+
+// requireSchema panics when the builder has no schema to update.
+func (b *BodyQueryParamType) requireSchema(method string) {
+	if b.Schema == nil {
+		panic("chirpc: " + method + " was called on a BodyQueryParamType with no Schema.")
+	}
 }
 
 // NewBodyQueryParamType creates a new BodyQueryParamType wrapping the provided HandlerSchema.
