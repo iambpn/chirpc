@@ -4,16 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/iambpn/chirpc/internal/rpc"
 )
-
-// IsRPCRouter is an interface used to identify types that act as RPC routers within the chirpc package.
-// It provides a single method isRpcRouter for type assertion and internal routing logic.
-type IsRPCRouter interface {
-	isRpcRouter() bool
-}
 
 // RPCRouter provides a thin wrapper around a chi.Mux router and exposes
 // helper methods for registering RPC-style handlers, mounting sub-routers,
@@ -28,22 +24,10 @@ type RPCRouter struct {
 	errorHandler ErrorHandlerType[any]
 }
 
-// isRpcRouter implements the IsRPCRouter interface for RPCRouter.
-func (r *RPCRouter) isRpcRouter() bool {
-	return true
-}
-
-// RPCSubRouter represents a sub-router within the chirpc routing system.
-// Its handlers are served and added to the schema at the path given to Mount.
-// This type is used for modular route grouping and mounting within the main router.
-type RPCSubRouter struct {
-	rpcRouter *RPCRouter
-}
-
-// isRpcRouter implements the IsRPCRouter interface for RPCSubRouter.
-func (r *RPCSubRouter) isRpcRouter() bool {
-	return true
-}
+// RPCSubRouter is the same type as RPCRouter. Any router can be mounted in another.
+//
+// Deprecated: Use RPCRouter.
+type RPCSubRouter = RPCRouter
 
 // errorHandlerKey is the request context key for the error handler of the router serving the request.
 type errorHandlerKey struct{}
@@ -78,18 +62,6 @@ func (r *RPCRouter) RPCSchemas() *rpc.RouterRpcSchemas {
 	return r.routerTypes
 }
 
-// rpcRouterOf returns the RPCRouter behind r. It panics for any other router type.
-func rpcRouterOf(r IsRPCRouter, caller string) *RPCRouter {
-	switch rt := r.(type) {
-	case *RPCRouter:
-		return rt
-	case *RPCSubRouter:
-		return rt.rpcRouter
-	default:
-		panic(fmt.Sprintf("chirpc: %s needs an *RPCRouter or *RPCSubRouter, but got %T.", caller, r))
-	}
-}
-
 // newRPCRouter wraps mux in an RPCRouter with no error handler.
 func newRPCRouter(mux *chi.Mux) *RPCRouter {
 	router := &RPCRouter{
@@ -110,51 +82,50 @@ func newRPCRouter(mux *chi.Mux) *RPCRouter {
 	return router
 }
 
-// NewRPCRouter creates a new RPCRouter with a fresh chi.Mux instance and registers
-// a default error handler for TypeScript type generation.
+// NewRPCRouter creates a new RPCRouter with a fresh chi.Mux instance. The router can
+// serve requests directly or be mounted in another router with Mount.
 func NewRPCRouter() *RPCRouter {
 	router := newRPCRouter(chi.NewRouter())
 
 	// This type describes the ErrorResponse body sent when no error handler is registered.
-	router.routerTypes.RegisterErrorHandler(ErrorHandlerType[ErrorResponse](nil))
+	// It is used only when this router is the root of the generated schema.
+	router.routerTypes.SetDefaultErrorHandler(ErrorHandlerType[ErrorResponse](nil))
 	return router
 }
 
-// NewRPCSubRouter creates a new RPCSubRouter with an empty route collection.
-func NewRPCSubRouter() *RPCSubRouter {
-	return &RPCSubRouter{
-		rpcRouter: newRPCRouter(chi.NewRouter()),
-	}
+// NewRPCSubRouter creates a new router for mounting.
+//
+// Deprecated: Use NewRPCRouter. Any router can be mounted in another.
+func NewRPCSubRouter() *RPCRouter {
+	return NewRPCRouter()
 }
 
 // AddMiddlewares attaches the provided middlewares to the router.
-func AddMiddlewares(r IsRPCRouter, middlewares ...MiddlewareType) {
-	rpcRouterOf(r, "AddMiddlewares").router.Use(middlewares...)
+func AddMiddlewares(r *RPCRouter, middlewares ...MiddlewareType) {
+	r.router.Use(middlewares...)
 }
 
 // AddHandler registers an RPC handler for the given HTTP method and path, applies optional middlewares,
-// records its schema for TypeScript generation, and returns a BodyQueryParamType to allow parameter configuration.
-// Path params are read from the full route URL when the schema is generated.
+// records its schema for TypeScript generation, and returns a ParamsBuilder to add extra path parameters.
+// Path params are read from the full route URL when the schema is generated. The schema has no request
+// body or query type. Use AddTypedHandler for routes that take them.
 // It panics when the handler cannot be registered, like chi does for invalid routes.
-func AddHandler[R any](r IsRPCRouter, method HttpMethods, path string, handler RequestHandler[R], middlewares ...MiddlewareType) *rpc.BodyQueryParamType {
-	rpcRouter := rpcRouterOf(r, "AddHandler")
-
+func AddHandler[R any](r *RPCRouter, method HttpMethods, path string, handler RequestHandler[R], middlewares ...MiddlewareType) *rpc.ParamsBuilder {
 	// register handler type to generate ts types
-	schema, err := rpcRouter.routerTypes.RegisterHandler(method, path, handler)
+	schema, err := r.routerTypes.RegisterHandler(method, path, handler)
 	if err != nil {
 		panic(fmt.Sprintf("chirpc: could not register the handler for %s %s: %s.", method, path, err))
 	}
 
-	bodyQueryParam := rpc.NewBodyQueryParamType(schema)
+	paramsBuilder := rpc.NewParamsBuilder(schema)
 
-	rpcRouter.router.With(middlewares...).Method(method, path, handler.ServeHTTPWithErrorHandler(nil))
+	r.router.With(middlewares...).Method(method, path, handler.ServeHTTPWithErrorHandler(nil))
 
-	return bodyQueryParam
+	return paramsBuilder
 }
 
 // Route creates a sub-route at the specified path, applies middlewares to it, and invokes the callback to populate it.
-func Route(r IsRPCRouter, path string, fn func(r *RPCRouter), middlewares ...MiddlewareType) {
-	parent := rpcRouterOf(r, "Route")
+func Route(parent *RPCRouter, path string, fn func(r *RPCRouter), middlewares ...MiddlewareType) {
 	router := newRPCRouter(chi.NewRouter())
 	AddMiddlewares(router, middlewares...)
 	fn(router)
@@ -163,21 +134,19 @@ func Route(r IsRPCRouter, path string, fn func(r *RPCRouter), middlewares ...Mid
 	parent.routerTypes.Mount(path, router.routerTypes)
 }
 
-// Mount mounts an existing RPCSubRouter at the specified path.
-// Handlers added to the sub-router after mounting are also served and included in the schema.
-func Mount(r IsRPCRouter, path string, subRouter *RPCSubRouter) {
+// Mount mounts an existing router at the specified path.
+// Handlers added to the mounted router later are also served and included in the schema.
+func Mount(parent *RPCRouter, path string, subRouter *RPCRouter) {
 	if subRouter == nil {
 		return
 	}
 
-	parent := rpcRouterOf(r, "Mount")
-	parent.router.Mount(path, subRouter.rpcRouter.router)
-	parent.routerTypes.Mount(path, subRouter.rpcRouter.routerTypes)
+	parent.router.Mount(path, subRouter.router)
+	parent.routerTypes.Mount(path, subRouter.routerTypes)
 }
 
 // Group creates an anonymous grouped sub-router, applies middlewares, and invokes the callback for registration.
-func Group(r IsRPCRouter, fn func(r *RPCRouter), middlewares ...MiddlewareType) {
-	parent := rpcRouterOf(r, "Group")
+func Group(parent *RPCRouter, fn func(r *RPCRouter), middlewares ...MiddlewareType) {
 	parent.router.Group(func(chiR chi.Router) {
 		// chi passes an inline *chi.Mux that shares the parent's routes.
 		router := newRPCRouter(chiR.(*chi.Mux))
@@ -189,22 +158,21 @@ func Group(r IsRPCRouter, fn func(r *RPCRouter), middlewares ...MiddlewareType) 
 }
 
 // MethodNotAllowed sets a custom handler for HTTP 405 Method Not Allowed responses.
-func MethodNotAllowed(r IsRPCRouter, fn http.HandlerFunc) {
-	rpcRouterOf(r, "MethodNotAllowed").router.MethodNotAllowed(fn)
+func MethodNotAllowed(r *RPCRouter, fn http.HandlerFunc) {
+	r.router.MethodNotAllowed(fn)
 }
 
 // NotFound sets a custom handler for HTTP 404 Not Found responses.
-func NotFound(r IsRPCRouter, fn http.HandlerFunc) {
-	rpcRouterOf(r, "NotFound").router.NotFound(fn)
+func NotFound(r *RPCRouter, fn http.HandlerFunc) {
+	r.router.NotFound(fn)
 }
 
-// RegisterErrorHandler sets the error handler for this router or sub-router and its child routers,
+// RegisterErrorHandler sets the error handler for this router and its child routers,
 // and registers its type information for generation. It applies to handlers added
 // before and after the call. A child router can register its own handler, but it must
 // return the same type as the root router's handler, because ApiSchema has one error type.
 // It panics when the error handler cannot be registered.
-func RegisterErrorHandler[R any](r IsRPCRouter, handler ErrorHandlerType[R]) {
-	router := rpcRouterOf(r, "RegisterErrorHandler")
+func RegisterErrorHandler[R any](router *RPCRouter, handler ErrorHandlerType[R]) {
 
 	// register handler type to generate ts types
 	if err := router.routerTypes.RegisterErrorHandler(handler); err != nil {
@@ -222,6 +190,17 @@ func RegisterErrorHandler[R any](r IsRPCRouter, handler ErrorHandlerType[R]) {
 			Headers:    resp.Headers,
 		}
 	}
+}
+
+// RegisterTSType makes the generated TypeScript use tsType wherever the Go type T appears,
+// for example chirpc.RegisterTSType[uuid.UUID](router, "string"). Use it for types with
+// custom JSON encoding. A type registered on a mounted router applies to the whole schema.
+// It panics when tsType is empty.
+func RegisterTSType[T any](r *RPCRouter, tsType string) {
+	if strings.TrimSpace(tsType) == "" {
+		panic("chirpc: RegisterTSType needs a TypeScript type, but got an empty string.")
+	}
+	r.routerTypes.SetTypeOverride(reflect.TypeFor[T](), tsType)
 }
 
 // RegisterMethod registers a custom HTTP method with chi so it can be used in routing.

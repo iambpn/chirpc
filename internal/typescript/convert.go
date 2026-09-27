@@ -6,10 +6,10 @@ package typescript
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/iambpn/chirpc/internal/rpc"
+	"github.com/iambpn/chirpc/internal/tags"
 )
 
 // Convert generates the TypeScript declarations and the ApiSchema type for
@@ -20,8 +20,13 @@ func Convert(schemas *rpc.RouterRpcSchemas) (string, error) {
 		return "", err
 	}
 
+	typeOverrides, err := schemas.TypeOverrides()
+	if err != nil {
+		return "", err
+	}
+
 	eps := NewEndpointSchema(true)
-	converter, err := newGutsConverter()
+	converter, err := newGutsConverter(typeOverrides)
 	if err != nil {
 		return "", err
 	}
@@ -44,7 +49,7 @@ func Convert(schemas *rpc.RouterRpcSchemas) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			schema.QueryRequired = hasRequiredField(route.Query, map[reflect.Type]bool{})
+			schema.QueryRequired = tags.HasRequiredField(route.Query)
 		}
 		if len(route.Params) > 0 {
 			schema.Param = sliceToTsInf(route.Params)

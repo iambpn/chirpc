@@ -13,6 +13,7 @@ No more hand-written DTOs, no more runtime surprises, no more API documentation 
 ## Features
 
 - **🔒 End-to-End Type Safety**: Generic-based request handlers with typed request/response bodies, query parameters, and URL params that automatically sync with TypeScript clients
+- **📥 Typed Request Decoding**: `AddTypedHandler` decodes the JSON body and query parameters into your types and returns 400 with field errors when they are not valid
 - **🚀 Automatic TypeScript Generation**: Converts Go structs to TypeScript interfaces with support for nested types, anonymous structs, pointers, maps, arrays, and custom struct tags
 - **🧱 Compiler-backed output**: Builds a TypeScript AST with [coder/guts](https://github.com/coder/guts) and serializes it with the TypeScript compiler
 - **🔌 Drop-in chi Wrapper**: Seamlessly integrates with existing chi routers, middleware, and ecosystem
@@ -21,7 +22,7 @@ No more hand-written DTOs, no more runtime surprises, no more API documentation 
 - **🎯 Router Composition**: Full support for grouping, mounting, and nesting routers with middleware scoping
 - **🔧 Custom HTTP Methods**: Register and use custom HTTP verbs beyond standard REST methods
 - **📦 TypeScript Client Ready**: Generated `ApiSchema` works seamlessly with [ts-axios-wrapper](https://www.npmjs.com/package/ts-axios-wrapper) for fully typed API calls
-- **🏷️ Struct Tag Support**: Customize TypeScript output using `tsKey`, `tsType`, `tsOptional`, and `tsOmit` tags
+- **🏷️ Struct Tag Support**: Field names come from the `json` tag, and `tsType`, `tsOptional`, and `tsOmit` tags customize the TypeScript output
 - **📝 Path Parameter Extraction**: Automatic URL parameter detection and type generation from chi-style path patterns (`/{id}`)
 - **🔄 Nested Type Support**: Handles complex nested structs, pointers, maps, slices, and anonymous inline structs
 
@@ -97,10 +98,8 @@ func main() {
     // Add global middlewares
     chirpc.AddMiddlewares(router, middleware.Logger)
 
-    // Register handlers with typed responses
-    chirpc.AddHandler(router, chirpc.MethodGet, "/", HelloHandler).
-        BodyType(RequestBody{}).
-        QueryType(RequestBody{})
+    // Register a typed handler. Its body and query types come from HelloHandler's signature.
+    chirpc.AddTypedHandler(router, chirpc.MethodGet, "/", HelloHandler)
 
     chirpc.AddHandler(router, chirpc.MethodGet, "/{id}", GetByIdHandler)
 
@@ -121,23 +120,20 @@ func main() {
 
 // Error handler with typed error response
 func ErrorHandler(r *http.Request, err *chirpc.ErrorResponse) *chirpc.HttpResponse[ErrorResponse] {
+    // StatusCode is left unset, so the status code of the ErrorResponse is used.
     return &chirpc.HttpResponse[ErrorResponse]{
-        StatusCode: http.StatusInternalServerError,
-        Body:       ErrorResponse{Message: "An error occurred"},
+        Body: ErrorResponse{Message: "An error occurred"},
         Headers: map[string]string{
             "Content-Type": "application/json",
         },
     }
 }
 
-// Request handler with typed response
-func HelloHandler(r *http.Request) (*chirpc.HttpResponse[HelloResponse], *chirpc.ErrorResponse) {
+// Typed handler: chirpc decodes the JSON body and the query into RequestBody before it runs
+func HelloHandler(req *chirpc.Request[RequestBody, RequestBody]) (*chirpc.HttpResponse[HelloResponse], error) {
     return &chirpc.HttpResponse[HelloResponse]{
         StatusCode: http.StatusOK,
-        Body:       HelloResponse{Message: "Hello, World!"},
-        Headers: map[string]string{
-            "Content-Type": "application/json",
-        },
+        Body:       HelloResponse{Message: "Hello, " + req.Body.Name + "!"},
     }, nil
 }
 
@@ -151,6 +147,47 @@ func GetByIdHandler(r *http.Request) (*chirpc.HttpResponse[HelloResponse], *chir
     }, nil
 }
 ```
+
+### Typed Handlers
+
+`AddTypedHandler` is the recommended way to add a route. The request body and query types are type parameters of the handler, so chirpc decodes them for you and the generated TypeScript always matches what the handler reads. The handler returns a plain `error`.
+
+```go
+type CreateUserBody struct {
+    Name  string `json:"name"`
+    Email string `json:"email,omitempty"`
+}
+
+type CreateUserQuery struct {
+    Notify bool `json:"notify,omitempty"`
+}
+
+type User struct {
+    ID   string `json:"id"`
+    Name string `json:"name"`
+}
+
+func CreateUser(req *chirpc.Request[CreateUserBody, CreateUserQuery]) (*chirpc.HttpResponse[User], error) {
+    teamID := req.Param("teamId") // URL path parameter
+    user, err := users.Create(req.Context(), teamID, req.Body.Name, req.Query.Notify)
+    if errors.Is(err, users.ErrExists) {
+        return nil, &chirpc.ErrorResponse{StatusCode: http.StatusConflict, Errors: []string{"This user already exists."}}
+    }
+    if err != nil {
+        return nil, err // sent as a general 500 error, and err stays private
+    }
+    return &chirpc.HttpResponse[User]{StatusCode: http.StatusCreated, Body: user}, nil
+}
+
+chirpc.AddTypedHandler(router, chirpc.MethodPost, "/teams/{teamId}/users", CreateUser)
+```
+
+- **No body or query:** use `chirpc.NoBody` or `chirpc.NoQuery`, as in `chirpc.Request[chirpc.NoBody, chirpc.NoQuery]`.
+- **Body:** decoded from JSON. A missing or `null` body, invalid JSON, a value of the wrong type, or a missing required field returns 400 with an `ErrorResponse`, and `validationErrors` names the field. Required fields are checked at every level, including nested objects, array elements, and map values, with paths such as `lines[1].sku`. A field is required unless it has `omitempty`, `omitzero`, or `tsOptional:"true"`, the same rule the TypeScript uses. A present `null` value counts as given. Keys are matched like `encoding/json` does: the `json` tag name or the Go field name, ignoring case.
+- **Query:** read with the same names as the TypeScript members: the `json` tag name, or the Go field name. Query keys are matched exactly, including case. Fields that are not optional are required, and a missing or invalid value returns 400 with `validationErrors` for each key. Supported field types are strings, booleans, numbers, types that implement `encoding.TextUnmarshaler` (such as `time.Time`), pointers to these, and slices of these for repeated keys (`?tag=a&tag=b`). Other types panic when the handler is registered.
+- **Errors:** an `*ErrorResponse` anywhere in the returned error chain is sent as it is, including one wrapped with `fmt.Errorf("...: %w", errResp)`. Any other error becomes a 500 `ErrorResponse` with a general message, and the original error is kept in its `Cause` field. `Cause` is never sent to the client, but your error handler can read it for logging. Decoding errors also go through your error handler.
+
+`AddHandler` still works for handlers that read the raw `*http.Request` themselves. Its routes have no `body` or `query` in the schema, so use `AddTypedHandler` for any route that takes a body or query parameters.
 
 ### TypeScript Schema Generation
 
@@ -285,9 +322,11 @@ try {
 
 #### Router Grouping and Mounting
 
+Any router can be mounted in another, so a module can build its own router with `NewRPCRouter` and the main program can mount it.
+
 ```go
-// Create sub-router
-subRouter := chirpc.NewRPCSubRouter()
+// Create a router for a module
+subRouter := chirpc.NewRPCRouter()
 chirpc.AddHandler(subRouter, chirpc.MethodGet, "/profile", ProfileHandler)
 chirpc.AddHandler(subRouter, chirpc.MethodPost, "/settings", SettingsHandler)
 
@@ -312,7 +351,7 @@ Customize TypeScript generation with struct tags to control how Go types are exp
 
 ```go
 type User struct {
-    ID        int    `json:"id" tsKey:"userId"`           // Rename field in TypeScript
+    ID        int    `json:"userId"`                      // Renamed with the json tag
     Name      string `json:"name"`                        // Standard mapping
     Age       int    `json:"age" tsOptional:"true"`       // Make optional in TypeScript
     Email     string `json:"email" tsType:"string"`       // Override TypeScript type
@@ -338,7 +377,7 @@ interface Profile {
 }
 
 interface User {
-  userId: number; // Renamed via tsKey
+  userId: number; // Renamed with the json tag
   name: string;
   age?: number; // Optional via tsOptional
   email: string;
@@ -352,10 +391,12 @@ interface User {
 
 **Available Struct Tags:**
 
-- `tsKey:"newName"` - Rename field in TypeScript interface
+- `json:"newName"` - Rename the field. The same name is used in the JSON, the query string, and TypeScript
 - `tsType:"customType"` - Override the generated TypeScript type
 - `tsOptional:"true"` - Make the field optional (add `?` in TypeScript)
 - `tsOmit:"true"` - Exclude the field from TypeScript generation
+
+The `tsKey` tag is no longer supported, because it renamed a field only in TypeScript while the server kept reading the `json` name. A field that still has `tsKey` makes schema generation return an error, and a query type with it panics when the handler is registered. Rename the field with the `json` tag instead.
 
 **Type Conversion Rules:**
 
@@ -373,6 +414,16 @@ interface User {
 - `interface{}` and unsupported function/channel types → `unknown`
 - Unexported fields → ignored
 - Anonymous struct fields → TypeScript inheritance/intersections
+
+#### Custom Types
+
+A `tsType` tag changes one field. To change a type everywhere it appears, register it on the router. This is useful for types with custom JSON encoding, such as IDs that are sent as strings:
+
+```go
+chirpc.RegisterTSType[ids.UserID](router, "string")
+```
+
+Every field, slice, map, and pointer of that type then uses the given TypeScript type, and no interface is generated for it. A type registered on a mounted router applies to the whole schema. Registering one Go type as two different TypeScript types is an error when the schema is generated.
 
 #### Custom HTTP Methods
 
@@ -408,15 +459,17 @@ chirpc.MethodNotAllowed(router, func(w http.ResponseWriter, r *http.Request) {
 
 - **`NewRPCRouter() *RPCRouter`** Create a new RPC router backed by chi.Mux. This is the main entry point for creating a chirpc application. `RPCRouter` implements `http.Handler`, so you can pass it to `http.ListenAndServe`, `httptest`, or another router.
 
-- **`NewRPCSubRouter() *RPCSubRouter`** Create a sub-router for mounting or grouping. Used with `Mount()` to organize routes. Every function below that takes a `router` accepts either an `*RPCRouter` or an `*RPCSubRouter`.
+- **`NewRPCSubRouter() *RPCRouter`** Deprecated. It is the same as `NewRPCRouter`, because any router can be mounted in another. `RPCSubRouter` is now an alias of `RPCRouter`.
 
 ### Handler Registration
 
-- **`AddHandler[R any](router, method, path, handler, ...middlewares) *BodyQueryParamType`** Register a typed request handler and capture schema metadata for TypeScript generation. Returns a fluent builder for configuring body/query/param types. It panics when the handler cannot be registered, so setup mistakes show up when the server starts.
+- **`AddTypedHandler[Body, Query, Res any](router, method, path, handler, ...middlewares)`** Register a `TypedHandler`. The JSON body and the URL query are decoded into `Body` and `Query` before the handler runs, and their types are used for the TypeScript schema. See [Typed Handlers](#typed-handlers). It panics when `Body` or `Query` cannot be used.
+
+- **`AddHandler[R any](router, method, path, handler, ...middlewares) *ParamsBuilder`** Register a handler that reads the raw `*http.Request` and capture its response type for TypeScript generation. The route has no `body` or `query` in the schema. Use `AddTypedHandler` for those. Returns a builder with a `Params` method. It panics when the handler cannot be registered, so setup mistakes show up when the server starts.
 
   **Parameters:**
 
-  - `router`: Either `*RPCRouter` or `*RPCSubRouter`
+  - `router`: The `*RPCRouter` to add the route to
   - `method`: HTTP method (use constants like `MethodGet`, `MethodPost`, etc.)
   - `path`: URL path pattern (supports chi-style params like `/{id}`)
   - `handler`: `RequestHandler[R]` function that processes requests
@@ -425,8 +478,7 @@ chirpc.MethodNotAllowed(router, func(w http.ResponseWriter, r *http.Request) {
   **Example:**
 
   ```go
-  chirpc.AddHandler(router, chirpc.MethodGet, "/users/{id}", GetUserHandler).
-      QueryType(QueryParams{})
+  chirpc.AddHandler(router, chirpc.MethodGet, "/users/{id}", GetUserHandler)
   ```
 
 - **`RegisterErrorHandler[R any](router, handler)`** Define a typed error handler invoked when handlers return `*ErrorResponse`. It applies to the router and its child routers, including handlers added before it. A child router from `Route` or `Group` can register its own handler, but it must return the same type as the root router's handler, because `ApiSchema` has one error type. Without an error handler, the `ErrorResponse` is sent with its `StatusCode`, or 500 when that is not set. When the error handler's response has no status code, the `ErrorResponse` status code is used in the same way.
@@ -464,12 +516,12 @@ chirpc.MethodNotAllowed(router, func(w http.ResponseWriter, r *http.Request) {
   }, middleware.Logger)
   ```
 
-- **`Mount(router, path, subRouter)`** Mount an existing RPCSubRouter at the specified path. All routes in the sub-router are prefixed with the mount path.
+- **`Mount(router, path, subRouter)`** Mount another router at the specified path. All routes in the mounted router are prefixed with the mount path, including routes added to it later.
 
   **Example:**
 
   ```go
-  subRouter := chirpc.NewRPCSubRouter()
+  subRouter := chirpc.NewRPCRouter()
   chirpc.AddHandler(subRouter, chirpc.MethodGet, "/profile", ProfileHandler)
   chirpc.Mount(router, "/user", subRouter)  // Accessible at /user/profile
   ```
@@ -484,31 +536,9 @@ chirpc.MethodNotAllowed(router, func(w http.ResponseWriter, r *http.Request) {
   }, AuthMiddleware)
   ```
 
-### Request Type Configuration
+### Path Parameter Configuration
 
-Methods returned by `AddHandler` for configuring expected request types:
-
-- **`.BodyType(body any)`** Specify the expected HTTP request body type for TypeScript generation. It must be a struct or a pointer to a struct, or it panics.
-- **`.QueryType(query any)`** Specify the expected URL query parameter type for TypeScript generation. It must be a struct or a pointer to a struct, or it panics.
-- **`.Params(slugs []string)`** Set expected URL path parameter slugs. Usually auto-detected from path, but can be set manually if needed.
-
-**Example:**
-
-```go
-type CreateUserRequest struct {
-    Name  string `json:"name"`
-    Email string `json:"email"`
-}
-
-type QueryParams struct {
-    Page  int `json:"page" tsOptional:"true"`
-    Limit int `json:"limit" tsOptional:"true"`
-}
-
-chirpc.AddHandler(router, chirpc.MethodPost, "/users", CreateUserHandler).
-    BodyType(CreateUserRequest{}).
-    QueryType(QueryParams{})
-```
+- **`.Params(slugs []string)`** Method on the value returned by `AddHandler`. It adds path parameter names that the URL pattern does not show. Parameters in the full route URL are always included, so this is rarely needed.
 
 ### Type Generation
 
@@ -610,15 +640,28 @@ Pre-defined HTTP method constants for use with `AddHandler`:
   }
   ```
 
-- **`ErrorResponse`** Structured error response with status code, error messages, and field-level validation errors.
+- **`ErrorResponse`** Structured error response with status code, error messages, and field-level validation errors. It implements `error`, and `Unwrap` returns `Cause`, which is never sent to the client.
 
   ```go
   type ErrorResponse struct {
       StatusCode       int                 `json:"statusCode,omitempty"`
       Errors           []string            `json:"errors,omitempty"`
       ValidationErrors map[string][]string `json:"validationErrors,omitempty"`
+      Cause            error               `json:"-"`
   }
   ```
+
+- **`TypedHandler[Body, Query, Res any]`** Handler function type for `AddTypedHandler`.
+
+  ```go
+  type TypedHandler[Body, Query, Res any] func(req *Request[Body, Query]) (*HttpResponse[Res], error)
+  ```
+
+- **`Request[Body, Query any]`** The decoded request passed to a `TypedHandler`. It has the fields `Body`, `Query`, and `HTTP` (the original `*http.Request`), and the methods `Param(name)` for URL path parameters and `Context()`.
+
+- **`NoBody`, `NoQuery`** Empty types to use as `Body` or `Query` when a request has none.
+
+- **`RegisterTSType[T any](router, tsType)`** Use `tsType` in the generated TypeScript wherever the Go type `T` appears. See [Custom Types](#custom-types).
 
 - **`RequestHandler[T any]`** Handler function type that processes requests and returns typed responses or errors.
 

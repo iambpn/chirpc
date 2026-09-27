@@ -25,3 +25,7 @@ api.GET("/", {
 api.GET("/:test", {
   params: { test: "example" },
 });
+
+api.POST("/users", {
+  body: { name: "Ada" },
+});

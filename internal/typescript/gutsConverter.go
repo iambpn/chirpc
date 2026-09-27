@@ -9,13 +9,7 @@ import (
 
 	"github.com/coder/guts"
 	"github.com/coder/guts/bindings"
-)
-
-const (
-	structTagKey      = "tsKey"
-	structTagType     = "tsType"
-	structTagOptional = "tsOptional"
-	structTagOmit     = "tsOmit"
+	"github.com/iambpn/chirpc/internal/tags"
 )
 
 // gutsConverter translates runtime types into guts' TypeScript AST. chirpc
@@ -29,6 +23,9 @@ type gutsConverter struct {
 	declarationNames map[string]reflect.Type
 	declarationOrder []reflect.Type
 	overrides        []typeOverride
+
+	// typeOverrides maps Go types to TypeScript types registered with RegisterTSType.
+	typeOverrides map[reflect.Type]string
 }
 
 type typeOverride struct {
@@ -36,7 +33,7 @@ type typeOverride struct {
 	value       string
 }
 
-func newGutsConverter() (*gutsConverter, error) {
+func newGutsConverter(typeOverrides map[reflect.Type]string) (*gutsConverter, error) {
 	renderer, err := bindings.New()
 	if err != nil {
 		return nil, fmt.Errorf("initialize guts TypeScript renderer: %w", err)
@@ -48,6 +45,7 @@ func newGutsConverter() (*gutsConverter, error) {
 		declarationNames: make(map[string]reflect.Type),
 		declarationOrder: make([]reflect.Type, 0),
 		overrides:        make([]typeOverride, 0),
+		typeOverrides:    typeOverrides,
 	}, nil
 }
 
@@ -102,6 +100,10 @@ func (c *gutsConverter) declarationStrings() ([]string, error) {
 func (c *gutsConverter) typeExpression(typ reflect.Type) (bindings.ExpressionType, error) {
 	if typ == nil {
 		return keyword(bindings.KeywordUnknown), nil
+	}
+
+	if tsType, ok := c.typeOverrides[typ]; ok {
+		return c.rawType(tsType), nil
 	}
 
 	if expression, ok := standardTypeMapping(typ); ok {
@@ -235,11 +237,14 @@ func (c *gutsConverter) structMembers(typ reflect.Type) ([]*bindings.PropertySig
 
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		if isFieldOmitted(field) {
+		if err := tags.CheckRemovedTags(field); err != nil {
+			return nil, nil, fmt.Errorf("type %s: %w", typ, err)
+		}
+		if tags.IsOmitted(field) {
 			continue
 		}
 
-		if field.Anonymous && field.Tag.Get("json") == "" {
+		if tags.IsEmbedded(field) {
 			embedded := dereference(field.Type)
 			if embedded == nil || embedded.Kind() != reflect.Struct || embedded.Name() == "" {
 				return nil, nil, fmt.Errorf("embedded field %s is not a named struct", field.Name)
@@ -261,8 +266,8 @@ func (c *gutsConverter) structMembers(typ reflect.Type) ([]*bindings.PropertySig
 		}
 
 		fields = append(fields, &bindings.PropertySignature{
-			Name:          fieldName(field),
-			QuestionToken: isFieldOptional(field),
+			Name:          tags.FieldName(field),
+			QuestionToken: tags.IsOptional(field),
 			Type:          expression,
 		})
 	}
@@ -271,20 +276,26 @@ func (c *gutsConverter) structMembers(typ reflect.Type) ([]*bindings.PropertySig
 }
 
 func (c *gutsConverter) fieldType(field reflect.StructField) (bindings.ExpressionType, error) {
-	if override := field.Tag.Get(structTagType); override != "" {
-		placeholder := fmt.Sprintf("__ChirpcTsOverride_%d__", len(c.overrides))
-		c.overrides = append(c.overrides, typeOverride{placeholder: placeholder, value: override})
-		return bindings.Reference(bindings.Identifier{Name: placeholder}), nil
+	if override := field.Tag.Get(tags.Type); override != "" {
+		return c.rawType(override), nil
 	}
 
 	expression, err := c.typeExpression(field.Type)
 	if err != nil {
 		return nil, err
 	}
-	if hasJSONOption(field, "string") {
+	if tags.HasJSONOption(field, "string") {
 		return jsonStringExpression(field.Type), nil
 	}
 	return expression, nil
+}
+
+// rawType returns an expression that is written as the TypeScript text tsType.
+// The AST has no node for raw text, so a placeholder name is replaced after serializing.
+func (c *gutsConverter) rawType(tsType string) bindings.ExpressionType {
+	placeholder := fmt.Sprintf("__ChirpcTsOverride_%d__", len(c.overrides))
+	c.overrides = append(c.overrides, typeOverride{placeholder: placeholder, value: tsType})
+	return bindings.Reference(bindings.Identifier{Name: placeholder})
 }
 
 func (c *gutsConverter) serialize(node bindings.Node) (string, error) {
@@ -337,77 +348,6 @@ func isMajorVersion(element string) bool {
 		}
 	}
 	return true
-}
-
-func fieldName(field reflect.StructField) string {
-	if name := field.Tag.Get(structTagKey); name != "" {
-		return name
-	}
-	if name, _ := jsonTag(field); name != "" {
-		return name
-	}
-	return field.Name
-}
-
-func isFieldOptional(field reflect.StructField) bool {
-	return strings.EqualFold(field.Tag.Get(structTagOptional), "true") ||
-		hasJSONOption(field, "omitempty") || hasJSONOption(field, "omitzero")
-}
-
-// hasRequiredField reports whether the generated type for the struct typ has a required
-// member. It follows the same rules as structMembers, including embedded structs.
-// seen holds the embedded structs already checked, to stop on recursive embedding.
-func hasRequiredField(typ reflect.Type, seen map[reflect.Type]bool) bool {
-	typ = dereference(typ)
-	if typ == nil || typ.Kind() != reflect.Struct || seen[typ] {
-		return false
-	}
-	seen[typ] = true
-
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		if isFieldOmitted(field) {
-			continue
-		}
-		if field.Anonymous && field.Tag.Get("json") == "" {
-			if hasRequiredField(field.Type, seen) {
-				return true
-			}
-			continue
-		}
-		if field.PkgPath != "" {
-			continue
-		}
-		if !isFieldOptional(field) {
-			return true
-		}
-	}
-	return false
-}
-
-func isFieldOmitted(field reflect.StructField) bool {
-	name, _ := jsonTag(field)
-	return name == "-" || strings.EqualFold(field.Tag.Get(structTagOmit), "true") ||
-		field.Tag.Get("typescript") == "-"
-}
-
-func jsonTag(field reflect.StructField) (string, []string) {
-	tag, ok := field.Tag.Lookup("json")
-	if !ok {
-		return "", nil
-	}
-	parts := strings.Split(tag, ",")
-	return parts[0], parts[1:]
-}
-
-func hasJSONOption(field reflect.StructField, option string) bool {
-	_, options := jsonTag(field)
-	for _, candidate := range options {
-		if candidate == option {
-			return true
-		}
-	}
-	return false
 }
 
 func jsonStringExpression(typ reflect.Type) bindings.ExpressionType {

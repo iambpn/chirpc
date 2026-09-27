@@ -160,3 +160,45 @@ func TestRouterRpcSchemas_Routes_RejectsMountCycles(t *testing.T) {
 		t.Fatalf("expected a mount cycle error, got %v", err)
 	}
 }
+
+func TestRouterRpcSchemas_Routes_UsesDefaultErrorHandlerOnlyForRoot(t *testing.T) {
+	defaultType := func(*http.Request, error) *testHttpResponse[int] { return nil }
+	customType := func(*http.Request, error) *testHttpResponse[string] { return nil }
+
+	root := NewRouterRpcSchemas()
+	child := NewRouterRpcSchemas()
+	_ = root.SetDefaultErrorHandler(defaultType)
+	_ = child.SetDefaultErrorHandler(defaultType)
+	_ = root.RegisterErrorHandler(customType)
+	root.Mount("/child", child)
+
+	routes, err := root.Routes()
+	if err != nil {
+		t.Fatalf("expected the child's default error type to be ignored, got %v", err)
+	}
+	if routes[0].Response != reflect.TypeOf(testHttpResponse[string]{}) {
+		t.Fatalf("expected the registered error type to win over the default, got %v", routes[0].Response)
+	}
+}
+
+func TestRouterRpcSchemas_TypeOverrides(t *testing.T) {
+	type id struct{}
+
+	root := NewRouterRpcSchemas()
+	child := NewRouterRpcSchemas()
+	root.Mount("/child", child)
+	child.SetTypeOverride(reflect.TypeOf(id{}), "string")
+
+	overrides, err := root.TypeOverrides()
+	if err != nil {
+		t.Fatalf("TypeOverrides returned error: %v", err)
+	}
+	if overrides[reflect.TypeOf(id{})] != "string" {
+		t.Fatalf("expected the child's override, got %v", overrides)
+	}
+
+	root.SetTypeOverride(reflect.TypeOf(id{}), "number")
+	if _, err := root.TypeOverrides(); err == nil || !strings.Contains(err.Error(), "registered as both") {
+		t.Fatalf("expected a conflict error, got %v", err)
+	}
+}

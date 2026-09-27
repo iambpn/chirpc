@@ -14,7 +14,7 @@ type converterEmbedded struct {
 
 type converterFixture struct {
 	converterEmbedded
-	Renamed   int               `json:"json_name" tsKey:"tsName"`
+	Renamed   int               `json:"json_name"`
 	Dashed    string            `json:"dashed-name"`
 	Raw       int               `tsType:"Date | null"`
 	Optional  string            `tsOptional:"true"`
@@ -29,7 +29,7 @@ type converterFixture struct {
 }
 
 func TestGutsConverterUsesCompilerASTAndChirpcTags(t *testing.T) {
-	converter, err := newGutsConverter()
+	converter, err := newGutsConverter(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestGutsConverterUsesCompilerASTAndChirpcTags(t *testing.T) {
 	compactOutput := compact(output)
 	checks := []string{
 		"Typescript__ConverterEmbedded & {",
-		"tsName: number;",
+		"json_name: number;",
 		`"dashed-name": string;`,
 		"Raw: Date | null;",
 		"Optional?: string;",
@@ -85,7 +85,7 @@ func TestGutsConverterResponseTypeAndNamedReuse(t *testing.T) {
 		Body converterEmbedded
 	}
 
-	converter, err := newGutsConverter()
+	converter, err := newGutsConverter(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestGutsConverterResponseTypeAndNamedReuse(t *testing.T) {
 }
 
 func TestGutsConverterRejectsResponseWithoutBody(t *testing.T) {
-	converter, err := newGutsConverter()
+	converter, err := newGutsConverter(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,26 +138,47 @@ func TestPackageNameSkipsMajorVersion(t *testing.T) {
 	}
 }
 
-func TestHasRequiredField(t *testing.T) {
-	type optionalEmbedded struct {
-		Page int `json:"page,omitempty"`
-	}
-	type allOptional struct {
-		optionalEmbedded
-		Filter  string `tsOptional:"true"`
-		Skipped string `json:"-"`
-		hidden  string
-	}
-	type withRequired struct {
-		optionalEmbedded
-		Filter string `json:"filter"`
+func TestGutsConverterUsesTypeOverrides(t *testing.T) {
+	type userID struct{ value [16]byte }
+	type payload struct {
+		ID       userID   `json:"id"`
+		Optional *userID  `json:"optional"`
+		Many     []userID `json:"many"`
 	}
 
-	if hasRequiredField(reflect.TypeOf(allOptional{}), map[reflect.Type]bool{}) {
-		t.Error("expected allOptional to have no required field")
+	converter, err := newGutsConverter(map[reflect.Type]string{reflect.TypeOf(userID{}): "string"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !hasRequiredField(reflect.TypeOf(&withRequired{}), map[reflect.Type]bool{}) {
-		t.Error("expected withRequired to have a required field")
+
+	output, err := converter.inlineStruct(reflect.TypeOf(payload{}))
+	if err != nil {
+		t.Fatal(err)
 	}
-	_ = allOptional{}.hidden
+
+	for _, check := range []string{"id: string;", "optional: string | null;", "many: string[];"} {
+		if !strings.Contains(output, check) {
+			t.Fatalf("expected generated type to contain %q, got:\n%s", check, output)
+		}
+	}
+	if declarations, _ := converter.declarationStrings(); len(declarations) != 0 {
+		t.Fatalf("expected no declaration for the overridden type, got %v", declarations)
+	}
+	_ = userID{}.value
+}
+
+func TestGutsConverterRejectsTsKey(t *testing.T) {
+	type legacy struct {
+		Name string `json:"name" tsKey:"fullName"`
+	}
+
+	converter, err := newGutsConverter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = converter.inlineStruct(reflect.TypeOf(legacy{}))
+	if err == nil || !strings.Contains(err.Error(), "field Name uses the tsKey tag, which is no longer supported") {
+		t.Fatalf("expected a tsKey error, got %v", err)
+	}
 }

@@ -1,7 +1,9 @@
 package chirpc
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 )
 
 // HttpResponse represents an HTTP response with a generic body type.
@@ -15,11 +17,47 @@ type HttpResponse[T any] struct {
 }
 
 // ErrorResponse represents a structured error response with status code, error messages,
-// and optional field-level validation errors.
+// and optional field-level validation errors. It implements error, so a TypedHandler
+// can return it directly.
 type ErrorResponse struct {
 	StatusCode       int                 `json:"statusCode,omitempty"`
 	Errors           []string            `json:"errors,omitempty"`
 	ValidationErrors map[string][]string `json:"validationErrors,omitempty"`
+
+	// Cause is the error that led to this response, for logging and for error handlers.
+	// It is never sent to the client.
+	Cause error `json:"-"`
+}
+
+// Error returns the error messages, or the cause, or the status text.
+func (e *ErrorResponse) Error() string {
+	if len(e.Errors) > 0 {
+		return strings.Join(e.Errors, " ")
+	}
+	if e.Cause != nil {
+		return e.Cause.Error()
+	}
+	return http.StatusText(errorStatusCode(e))
+}
+
+// Unwrap returns the cause, so errors.Is and errors.As can see it.
+func (e *ErrorResponse) Unwrap() error {
+	return e.Cause
+}
+
+// toErrorResponse converts an error returned by a TypedHandler into an ErrorResponse.
+// An *ErrorResponse anywhere in the chain is used as it is. Any other error becomes
+// a 500 response with a general message, and the error is kept in Cause.
+func toErrorResponse(err error) *ErrorResponse {
+	var errResp *ErrorResponse
+	if errors.As(err, &errResp) && errResp != nil {
+		return errResp
+	}
+	return &ErrorResponse{
+		StatusCode: http.StatusInternalServerError,
+		Errors:     []string{"An internal server error occurred."},
+		Cause:      err,
+	}
 }
 
 // MiddlewareType is a type alias for a middleware function that wraps an http.Handler.

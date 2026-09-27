@@ -369,7 +369,7 @@ func TestAddHandlerReturnsBodyQueryParamWithSchema(t *testing.T) {
 		return &HttpResponse[string]{StatusCode: http.StatusOK, Body: "ok"}, nil
 	}))
 	if bqp == nil {
-		t.Fatal("expected BodyQueryParamType pointer, got nil")
+		t.Fatal("expected ParamsBuilder pointer, got nil")
 	}
 	if bqp.Schema == nil {
 		t.Fatal("expected Schema to be populated")
@@ -460,21 +460,6 @@ func TestGenerateRpcTypesWithRouteMountGroup(t *testing.T) {
 	}
 }
 
-type fakeRouter struct{}
-
-func (f *fakeRouter) isRpcRouter() bool { return true }
-
-func TestAddHandlerWithUnknownRouterTypePanics(t *testing.T) {
-	defer func() {
-		recovered := recover()
-		if recovered == nil || !strings.Contains(fmt.Sprint(recovered), "*chirpc.fakeRouter") {
-			t.Fatalf("expected a panic naming the router type, got %v", recovered)
-		}
-	}()
-
-	AddHandler(&fakeRouter{}, MethodGet, "/unknown", okHandler)
-}
-
 func TestAddHandlerOnSubRouterRecordsSchema(t *testing.T) {
 	sub := NewRPCSubRouter()
 	bqp := AddHandler(sub, MethodGet, "/child", RequestHandler[string](func(req *http.Request) (*HttpResponse[string], *ErrorResponse) {
@@ -482,7 +467,7 @@ func TestAddHandlerOnSubRouterRecordsSchema(t *testing.T) {
 	}))
 
 	if bqp == nil || bqp.Schema == nil {
-		t.Fatal("expected BodyQueryParamType to reference a recorded schema")
+		t.Fatal("expected ParamsBuilder to reference a recorded schema")
 	}
 	if bqp.Schema.URL() != "/child" {
 		t.Fatalf("expected schema URL %q, got %q", "/child", bqp.Schema.URL())
@@ -945,4 +930,63 @@ func TestSchemaNamesChirpcTypesByPackageName(t *testing.T) {
 	if !strings.Contains(content, "interface Chirpc__ErrorResponse") {
 		t.Fatalf("expected the error type to be named Chirpc__ErrorResponse, got %s", content)
 	}
+}
+
+func TestAnyRouterCanBeMounted(t *testing.T) {
+	root := NewRPCRouter()
+	RegisterErrorHandler(root, func(req *http.Request, err *ErrorResponse) *HttpResponse[string] {
+		return &HttpResponse[string]{StatusCode: http.StatusTeapot, Body: "root"}
+	})
+
+	// This router has its own default error type, which must not conflict with the root's.
+	child := NewRPCRouter()
+	AddHandler(child, MethodGet, "/fail", failHandler)
+	Mount(root, "/child", child)
+
+	if code := serve(root, http.MethodGet, "/child/fail").Code; code != http.StatusTeapot {
+		t.Fatalf("expected the root error handler to be used, got %d", code)
+	}
+	if content := generateSchema(t, root); !strings.Contains(content, `"/child/fail"`) {
+		t.Fatalf("expected the mounted route in the schema, got %s", content)
+	}
+}
+
+type customID struct {
+	value [16]byte
+}
+
+func (id customID) MarshalText() ([]byte, error) {
+	return []byte(fmt.Sprintf("%x", id.value)), nil
+}
+
+func TestRegisterTSType(t *testing.T) {
+	type withID struct {
+		ID  customID   `json:"id"`
+		IDs []customID `json:"ids"`
+	}
+
+	r := NewRPCRouter()
+	sub := NewRPCRouter()
+	RegisterTSType[customID](sub, "string")
+	AddHandler(sub, MethodGet, "/item", func(req *http.Request) (*HttpResponse[withID], *ErrorResponse) {
+		return nil, nil
+	})
+	Mount(r, "/api", sub)
+
+	content := generateSchema(t, r)
+	for _, want := range []string{"id: string;", "ids: string[];"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected schema to contain %q, got:\n%s", want, content)
+		}
+	}
+	if strings.Contains(content, "CustomID") {
+		t.Fatalf("expected no declaration for the overridden type, got:\n%s", content)
+	}
+
+	defer func() {
+		if recovered := fmt.Sprint(recover()); !strings.Contains(recovered, "needs a TypeScript type") {
+			t.Fatalf("expected a panic for an empty type, got %q", recovered)
+		}
+	}()
+	RegisterTSType[customID](r, " ")
 }
