@@ -28,13 +28,48 @@ type converterFixture struct {
 	Omitted   string            `tsOmit:"true"`
 }
 
+type converterExtra struct {
+	Note string `json:"note"`
+}
+
+func TestGutsConverterFollowsJSONv2Options(t *testing.T) {
+	type withEmbedOption struct {
+		Extra converterExtra `json:",embed"`
+		ID    uint64         `json:"id,string"`
+		Count *int           `json:"count,string"`
+	}
+	converter, err := newGutsConverter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := converter.inlineStruct(reflect.TypeFor[withEmbedOption]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []string{"Typescript__ConverterExtra & {", "id: string;", "count: string | null;"} {
+		if !strings.Contains(output, check) {
+			t.Fatalf("expected generated type to contain %q, got:\n%s", check, output)
+		}
+	}
+	if strings.Contains(output, "Extra:") {
+		t.Fatalf("expected the embed field to be promoted, got:\n%s", output)
+	}
+
+	type stringOnBool struct {
+		Active bool `json:"active,string"`
+	}
+	if _, err := converter.inlineStruct(reflect.TypeFor[stringOnBool]()); err == nil || !strings.Contains(err.Error(), "works only on number fields") {
+		t.Fatalf("expected an error for the string option on a bool, got %v", err)
+	}
+}
+
 func TestGutsConverterUsesCompilerASTAndChirpcTags(t *testing.T) {
 	converter, err := newGutsConverter(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	output, err := converter.inlineStruct(reflect.TypeOf(converterFixture{}))
+	output, err := converter.inlineStruct(reflect.TypeFor[converterFixture]())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +91,7 @@ func TestGutsConverterUsesCompilerASTAndChirpcTags(t *testing.T) {
 		"Optional?: string;",
 		"encoded: string;",
 		"bytes: string;",
-		"values: Record<string, string> | null;",
+		"values: Record<string, string>;",
 		"fixed: [string, string];",
 		"created_at: string;",
 		"duration: number;",
@@ -90,11 +125,11 @@ func TestGutsConverterResponseTypeAndNamedReuse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	first, err := converter.responseType(reflect.TypeOf(response{}))
+	first, err := converter.responseType(reflect.TypeFor[response]())
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := converter.responseType(reflect.TypeOf(response{}))
+	second, err := converter.responseType(reflect.TypeFor[response]())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,12 +181,12 @@ func TestGutsConverterUsesTypeOverrides(t *testing.T) {
 		Many     []userID `json:"many"`
 	}
 
-	converter, err := newGutsConverter(map[reflect.Type]string{reflect.TypeOf(userID{}): "string"})
+	converter, err := newGutsConverter(map[reflect.Type]string{reflect.TypeFor[userID](): "string"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	output, err := converter.inlineStruct(reflect.TypeOf(payload{}))
+	output, err := converter.inlineStruct(reflect.TypeFor[payload]())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +212,7 @@ func TestGutsConverterRejectsTsKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = converter.inlineStruct(reflect.TypeOf(legacy{}))
+	_, err = converter.inlineStruct(reflect.TypeFor[legacy]())
 	if err == nil || !strings.Contains(err.Error(), "field Name uses the tsKey tag, which is no longer supported") {
 		t.Fatalf("expected a tsKey error, got %v", err)
 	}

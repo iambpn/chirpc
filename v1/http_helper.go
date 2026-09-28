@@ -3,10 +3,16 @@
 package chirpc
 
 import (
-	"encoding/json"
+	jsonv1 "encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"reflect"
 )
+
+// jsonOptions are the options for every JSON body that chirpc reads or writes with
+// encoding/json/v2. They encode time.Duration as a number of nanoseconds, because v2
+// has no default form for it. The generated TypeScript describes it as a number.
+var jsonOptions = jsonv1.FormatDurationAsNano(true)
 
 /*
 Helper functions for handling HTTP responses.
@@ -35,7 +41,7 @@ func sendResponse[T any](w http.ResponseWriter, resp *HttpResponse[T]) {
 
 	// A nil interface body has no type, and it is sent as JSON null.
 	if tType == nil || isJSONMarshable(tType.Kind()) {
-		outBytes, err := json.Marshal(resp.Body)
+		outBytes, err := json.Marshal(resp.Body, jsonOptions)
 		if err != nil {
 			http.Error(w, "an error occurred while marshalling payload", http.StatusInternalServerError)
 			return
@@ -60,7 +66,7 @@ func bodyAllowed(statusCode int) bool {
 }
 
 // isJSONMarshable reports whether the given reflect.Kind can be marshaled to JSON
-// by the encoding/json package. This checks the Kind itself, not dereferenced types.
+// by the encoding/json/v2 package. This checks the Kind itself, not dereferenced types.
 func isJSONMarshable(v reflect.Kind) bool {
 	// Check for basic types that can be marshaled to JSON
 	switch v {

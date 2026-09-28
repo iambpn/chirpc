@@ -3,7 +3,7 @@ package chirpc
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -136,8 +136,8 @@ func decodeBody(httpReq *http.Request, checker *jsonbody.Checker, target any) *E
 		}
 	}
 
-	if err := json.Unmarshal(data, target); err != nil {
-		return jsonErrorResponse(err)
+	if err := json.Unmarshal(data, target, jsonOptions); err != nil {
+		return jsonErrorResponse(data, err)
 	}
 
 	if problems := checker.Check(data); problems != nil {
@@ -150,22 +150,30 @@ func decodeBody(httpReq *http.Request, checker *jsonbody.Checker, target any) *E
 	return nil
 }
 
-// jsonErrorResponse describes a JSON decoding error as a 400 ErrorResponse.
-// A value of the wrong type is reported for its field.
-func jsonErrorResponse(err error) *ErrorResponse {
+// jsonErrorResponse describes an error from decoding the JSON document data as a 400
+// ErrorResponse. A value that does not fit its field is reported at the field's path.
+func jsonErrorResponse(data []byte, err error) *ErrorResponse {
 	errResp := &ErrorResponse{StatusCode: http.StatusBadRequest, Cause: err}
 
-	var typeErr *json.UnmarshalTypeError
-	switch {
-	case errors.As(err, &typeErr) && typeErr.Field != "":
-		errResp.Errors = []string{"The request body is not valid."}
-		errResp.ValidationErrors = map[string][]string{
-			typeErr.Field: {fmt.Sprintf("This value must be %s.", jsonKindName(typeErr.Type))},
-		}
-	default:
+	semanticErr, ok := errors.AsType[*json.SemanticError](err)
+	if !ok || semanticErr.JSONPointer == "" {
 		errResp.Errors = []string{"The request body is not valid JSON."}
+		return errResp
+	}
+
+	errResp.Errors = []string{"The request body is not valid."}
+	errResp.ValidationErrors = map[string][]string{
+		jsonbody.Path(data, semanticErr.JSONPointer): {valueErrorMessage(semanticErr.GoType)},
 	}
 	return errResp
+}
+
+// valueErrorMessage describes what a JSON value must be to decode into typ.
+func valueErrorMessage(typ reflect.Type) string {
+	if typ == nil || jsonbody.HasCustomDecoding(tags.Dereference(typ)) {
+		return "This value is not valid."
+	}
+	return fmt.Sprintf("This value must be %s.", jsonKindName(typ))
 }
 
 // decodeQuery decodes the URL query into target, which is the Query value of a Request.

@@ -27,7 +27,7 @@ type searchQuery struct {
 
 func decode(t *testing.T, raw string) (searchQuery, map[string][]string) {
 	t.Helper()
-	decoder, err := NewDecoder(reflect.TypeOf(searchQuery{}))
+	decoder, err := NewDecoder(reflect.TypeFor[searchQuery]())
 	if err != nil {
 		t.Fatalf("NewDecoder returned error: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestNewDecoderRejectsUnsupportedTypes(t *testing.T) {
 		}
 	}
 
-	if _, err := NewDecoder(reflect.TypeOf("")); err == nil || !strings.Contains(err.Error(), "must be a struct") {
+	if _, err := NewDecoder(reflect.TypeFor[string]()); err == nil || !strings.Contains(err.Error(), "must be a struct") {
 		t.Errorf("expected a struct error, got %v", err)
 	}
 }

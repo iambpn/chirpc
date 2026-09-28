@@ -8,13 +8,19 @@ importers:
 
   .:
     dependencies:
+      axios:
+        specifier: ^1.12.2
+        version: 1.20.0(debug@4.4.3)
       ts-axios-wrapper:
-        specifier: ^1.1.2
+        specifier: ^1.1.5
         version: 1.1.5(debug@4.4.3)
     devDependencies:
+      '@types/node':
+        specifier: ^24.5.2
+        version: 24.13.6
       tsx:
         specifier: ^4.20.5
-        version: 4.23.13
+        version: 4.23.15
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -177,6 +183,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@types/node@24.13.6':
+    resolution: {integrity: sha512-SGrw/h3KPFshy3OE6ZL53LMBG5vGQQ8/gIpiqz/kRZhPJ7HgwCEs8LBuNtWLa8dvGZVpSF7+Bf+c11HUrCb/yg==}
+
   agent-base@6.0.2:
     resolution: {integrity: sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==}
     engines: {node: '>= 6.0.0'}
@@ -304,8 +313,8 @@ packages:
   ts-axios-wrapper@1.1.5:
     resolution: {integrity: sha512-j0gdaXOlj2BHlLjNVxSRJlmvPbQg7e+2MbIfw2ejLcz2K4PziknyM8l9/5BydfA8vRMuUlZBPk9ycpz6LQPW7w==}
 
-  tsx@4.23.13:
-    resolution: {integrity: sha512-BL5MGkRln6aDYhb0xbQlEAGw743BaZYWdbWtdJOBriYJboKgUUYCadFp2/FpBBZquBC/ezNBn7wMMPx7FDZUDw==}
+  tsx@4.23.15:
+    resolution: {integrity: sha512-Yiex1Ovn8z2xPpOWckIiysV1SSyRMY9BkLF++q0yKiDxCqRhosKfMg3janKkiLBwZ5c/YryloKwGZcrEmtwxKw==}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
@@ -313,6 +322,9 @@ packages:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
     hasBin: true
+
+  undici-types@7.18.2:
+    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
 snapshots:
 
@@ -393,6 +405,10 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@types/node@24.13.6':
+    dependencies:
+      undici-types: 7.18.2
 
   agent-base@6.0.2:
     dependencies:
@@ -550,10 +566,12 @@ snapshots:
       - debug
       - supports-color
 
-  tsx@4.23.13:
+  tsx@4.23.15:
     dependencies:
       esbuild: 0.28.2
     optionalDependencies:
       fsevents: 2.3.3
 
   typescript@5.9.3: {}
+
+  undici-types@7.18.2: {}

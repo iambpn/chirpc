@@ -89,7 +89,7 @@ func TestRouterRpcSchemas_RegisterHandler_ReturnsModifiableSchemaReference(t *te
 
 	schema.SetBodyType(testAddress{})
 
-	if r.schemas[0].bodyType == nil || r.schemas[0].bodyType != reflect.TypeOf(testAddress{}) {
+	if r.schemas[0].bodyType == nil || r.schemas[0].bodyType != reflect.TypeFor[testAddress]() {
 		t.Fatalf("expected bodyType to propagate to stored schema")
 	}
 }
@@ -144,7 +144,7 @@ func TestRouterRpcSchemas_Routes_ResolvesMountedURLsAndParams(t *testing.T) {
 	if !reflect.DeepEqual(route.Params, []string{"userId", "postId"}) {
 		t.Fatalf("unexpected params %v", route.Params)
 	}
-	if route.Body != reflect.TypeOf(testCreateReq{}) {
+	if route.Body != reflect.TypeFor[testCreateReq]() {
 		t.Fatalf("unexpected body type %v", route.Body)
 	}
 }
@@ -176,7 +176,7 @@ func TestRouterRpcSchemas_Routes_UsesDefaultErrorHandlerOnlyForRoot(t *testing.T
 	if err != nil {
 		t.Fatalf("expected the child's default error type to be ignored, got %v", err)
 	}
-	if routes[0].Response != reflect.TypeOf(testHttpResponse[string]{}) {
+	if routes[0].Response != reflect.TypeFor[testHttpResponse[string]]() {
 		t.Fatalf("expected the registered error type to win over the default, got %v", routes[0].Response)
 	}
 }
@@ -187,17 +187,17 @@ func TestRouterRpcSchemas_TypeOverrides(t *testing.T) {
 	root := NewRouterRpcSchemas()
 	child := NewRouterRpcSchemas()
 	root.Mount("/child", child)
-	child.SetTypeOverride(reflect.TypeOf(id{}), "string")
+	child.SetTypeOverride(reflect.TypeFor[id](), "string")
 
 	overrides, err := root.TypeOverrides()
 	if err != nil {
 		t.Fatalf("TypeOverrides returned error: %v", err)
 	}
-	if overrides[reflect.TypeOf(id{})] != "string" {
+	if overrides[reflect.TypeFor[id]()] != "string" {
 		t.Fatalf("expected the child's override, got %v", overrides)
 	}
 
-	root.SetTypeOverride(reflect.TypeOf(id{}), "number")
+	root.SetTypeOverride(reflect.TypeFor[id](), "number")
 	if _, err := root.TypeOverrides(); err == nil || !strings.Contains(err.Error(), "registered as both") {
 		t.Fatalf("expected a conflict error, got %v", err)
 	}

@@ -1,15 +1,16 @@
 // Package jsonbody finds required fields that are missing from a JSON request body.
-// encoding/json leaves a missing field at its zero value without an error, so this
+// encoding/json/v2 leaves a missing field at its zero value without an error, so this
 // check runs after decoding. A field is required when it is neither omitted nor
 // optional, which is the same rule the generated TypeScript uses.
 package jsonbody
 
 import (
-	"bytes"
 	"encoding"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/iambpn/chirpc/internal/tags"
@@ -36,16 +37,19 @@ type typePlan struct {
 	elem   *typePlan   // for listPlan and mapPlan
 }
 
-// fieldPlan is one struct field, read from the JSON key key.
+// fieldPlan is one struct field, read from the JSON key key. When ignoreCase is set,
+// the key is matched as the json case:ignore option does.
 type fieldPlan struct {
-	key      string
-	required bool
-	plan     *typePlan
+	key        string
+	ignoreCase bool
+	required   bool
+	plan       *typePlan
 }
 
 var (
-	jsonUnmarshalerType = reflect.TypeFor[json.Unmarshaler]()
-	textUnmarshalerType = reflect.TypeFor[encoding.TextUnmarshaler]()
+	jsonUnmarshalerType     = reflect.TypeFor[json.Unmarshaler]()
+	jsonUnmarshalerFromType = reflect.TypeFor[json.UnmarshalerFrom]()
+	textUnmarshalerType     = reflect.TypeFor[encoding.TextUnmarshaler]()
 )
 
 // NewChecker prepares a checker for typ. Nested structs, and structs inside slices,
@@ -64,10 +68,8 @@ func (c *Checker) Check(data []byte) map[string][]string {
 		return nil
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
 	var value any
-	if err := decoder.Decode(&value); err != nil {
+	if err := json.Unmarshal(data, &value); err != nil {
 		return nil
 	}
 
@@ -81,7 +83,7 @@ func (c *Checker) Check(data []byte) map[string][]string {
 
 // check adds the missing required fields in value, found at path, to problems.
 // Values of the wrong JSON type are skipped, because decoding already reports them.
-// JSON null is accepted, because encoding/json accepts it for any type.
+// JSON null is accepted, because encoding/json/v2 accepts it for any type.
 func (p *typePlan) check(value any, path string, problems map[string][]string) {
 	switch p.kind {
 	case objectPlan:
@@ -90,7 +92,7 @@ func (p *typePlan) check(value any, path string, problems map[string][]string) {
 			return
 		}
 		for _, field := range p.fields {
-			fieldValue, found := lookup(object, field.key)
+			fieldValue, found := field.lookup(object)
 			fieldPath := joinPath(path, field.key)
 			if !found {
 				if field.required {
@@ -121,18 +123,55 @@ func (p *typePlan) check(value any, path string, problems map[string][]string) {
 	}
 }
 
-// lookup finds key in object the way encoding/json does: an exact match first,
-// then a case-insensitive match.
-func lookup(object map[string]any, key string) (any, bool) {
-	if value, ok := object[key]; ok {
-		return value, true
+// lookup finds the field's value in object the way encoding/json/v2 does. The key must
+// match exactly, unless the field has case:ignore, which also ignores dashes and underscores.
+func (f fieldPlan) lookup(object map[string]any) (any, bool) {
+	if value, ok := object[f.key]; ok || !f.ignoreCase {
+		return value, ok
 	}
+	key := foldName(f.key)
 	for candidate, value := range object {
-		if strings.EqualFold(candidate, key) {
+		if foldName(candidate) == key {
 			return value, true
 		}
 	}
 	return nil, false
+}
+
+// nameSeparators removes the dashes and underscores that case:ignore does not compare.
+var nameSeparators = strings.NewReplacer("-", "", "_", "")
+
+// foldName returns name in lower case without dashes and underscores.
+func foldName(name string) string {
+	return strings.ToLower(nameSeparators.Replace(name))
+}
+
+// Path turns pointer, a JSON Pointer into the JSON document data, into a path in the
+// form Check uses, such as "items[0].name". A JSON Pointer cannot tell an array index
+// from an object key, so data is read to find out which one each token is.
+func Path(data []byte, pointer jsontext.Pointer) string {
+	var value any
+	_ = json.Unmarshal(data, &value)
+
+	path := ""
+	for token := range pointer.Tokens() {
+		switch current := value.(type) {
+		case []any:
+			path += "[" + token + "]"
+			if index, err := strconv.Atoi(token); err == nil && index >= 0 && index < len(current) {
+				value = current[index]
+			} else {
+				value = nil
+			}
+		case map[string]any:
+			path = joinPath(path, token)
+			value = current[token]
+		default:
+			path = joinPath(path, token)
+			value = nil
+		}
+	}
+	return path
 }
 
 // joinPath adds key to a dotted path.
@@ -152,7 +191,7 @@ type planBuilder struct {
 // plan returns the checks for typ, or nil when there is nothing to check.
 func (b *planBuilder) plan(typ reflect.Type) *typePlan {
 	typ = tags.Dereference(typ)
-	if typ == nil || hasCustomDecoding(typ) {
+	if typ == nil || HasCustomDecoding(typ) {
 		return nil
 	}
 	if plan, ok := b.plans[typ]; ok {
@@ -181,16 +220,15 @@ func (b *planBuilder) plan(typ reflect.Type) *typePlan {
 }
 
 // addFields adds the fields of the struct typ to plan. The fields of embedded structs
-// are added as if they were declared in typ, as encoding/json promotes them.
+// are added as if they were declared in typ, as encoding/json/v2 promotes them.
 func (b *planBuilder) addFields(plan *typePlan, typ reflect.Type) {
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
+	for field := range typ.Fields() {
 		if tags.IsOmitted(field) {
 			continue
 		}
 		if tags.IsEmbedded(field) {
 			embedded := tags.Dereference(field.Type)
-			if embedded.Kind() == reflect.Struct && !hasCustomDecoding(embedded) {
+			if embedded.Kind() == reflect.Struct && !HasCustomDecoding(embedded) {
 				b.addFields(plan, embedded)
 			}
 			continue
@@ -200,15 +238,18 @@ func (b *planBuilder) addFields(plan *typePlan, typ reflect.Type) {
 		}
 
 		plan.fields = append(plan.fields, fieldPlan{
-			key:      tags.FieldName(field),
-			required: !tags.IsOptional(field),
-			plan:     b.plan(field.Type),
+			key:        tags.FieldName(field),
+			ignoreCase: tags.IgnoresCase(field),
+			required:   !tags.IsOptional(field),
+			plan:       b.plan(field.Type),
 		})
 	}
 }
 
-// hasCustomDecoding reports whether encoding/json decodes typ with its own method.
-func hasCustomDecoding(typ reflect.Type) bool {
+// HasCustomDecoding reports whether encoding/json/v2 decodes typ with its own method.
+func HasCustomDecoding(typ reflect.Type) bool {
 	pointer := reflect.PointerTo(typ)
-	return pointer.Implements(jsonUnmarshalerType) || pointer.Implements(textUnmarshalerType)
+	return pointer.Implements(jsonUnmarshalerType) ||
+		pointer.Implements(jsonUnmarshalerFromType) ||
+		pointer.Implements(textUnmarshalerType)
 }

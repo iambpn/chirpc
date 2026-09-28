@@ -110,16 +110,16 @@ func TestIsJSONMarshable(t *testing.T) {
 		sampleVal  sample
 		intVal     int
 		strVal     string
-		mapVal                 = map[string]int{}
-		sliceVal               = []string{}
-		arrayVal               = [2]int{}
-		boolVal                = true
-		floatVal               = 3.14
-		ifaceVal   interface{} = 5
-		ptrVal                 = &sampleVal
-		chanVal                = make(chan int)
-		funcVal                = func() {}
-		complexVal complex64   = 1 + 2i
+		mapVal               = map[string]int{}
+		sliceVal             = []string{}
+		arrayVal             = [2]int{}
+		boolVal              = true
+		floatVal             = 3.14
+		ifaceVal   any       = 5
+		ptrVal               = &sampleVal
+		chanVal              = make(chan int)
+		funcVal              = func() {}
+		complexVal complex64 = 1 + 2i
 	)
 
 	cases := []struct {
@@ -171,5 +171,34 @@ func TestSendResponse_KeepsCustomContentType(t *testing.T) {
 
 	if got := recorder.Header().Get("Content-Type"); got != "application/vnd.api+json" {
 		t.Fatalf("expected custom Content-Type, got %q", got)
+	}
+}
+
+func TestSendResponse_SendsNilSlicesAndMapsAsEmpty(t *testing.T) {
+	type listing struct {
+		Items  []string          `json:"items"`
+		Labels map[string]string `json:"labels"`
+	}
+	recorder := httptest.NewRecorder()
+
+	sendResponse(recorder, &HttpResponse[listing]{StatusCode: http.StatusOK})
+
+	const expectedBody = `{"items":[],"labels":{}}`
+	if recorder.Body.String() != expectedBody {
+		t.Fatalf("expected body %q, got %q", expectedBody, recorder.Body.String())
+	}
+}
+
+func TestSendResponse_LeavesOutAnUnsetErrorStatusCode(t *testing.T) {
+	recorder := httptest.NewRecorder()
+
+	sendResponse(recorder, &HttpResponse[*ErrorResponse]{
+		StatusCode: http.StatusBadRequest,
+		Body:       &ErrorResponse{Errors: []string{"Bad input."}},
+	})
+
+	const expectedBody = `{"errors":["Bad input."]}`
+	if recorder.Body.String() != expectedBody {
+		t.Fatalf("expected body %q, got %q", expectedBody, recorder.Body.String())
 	}
 }

@@ -5,7 +5,10 @@ clean:
 	go clean && rm -rf build/
 
 run-server:
-	go run cmd/example/server/main.go
+	go run ./cmd/example/server
+
+gen-schema:
+	go run ./cmd/example/gen-schema -out cmd/example/client/src/apiSchema.ts
 
 test:
 	go test ./... --cover --coverprofile=coverage.out
@@ -16,4 +19,4 @@ test-v:
 html-coverage:
 	go tool cover -html=coverage.out -o coverage.html
 
-.PHONY: build clean run-server test test-v html-coverage
+.PHONY: build clean run-server gen-schema test test-v html-coverage

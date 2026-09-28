@@ -1,6 +1,7 @@
 package jsonbody
 
 import (
+	"encoding/json/jsontext"
 	"reflect"
 	"testing"
 	"time"
@@ -44,7 +45,7 @@ type order struct {
 
 func check(t *testing.T, body string) map[string][]string {
 	t.Helper()
-	return NewChecker(reflect.TypeOf(order{})).Check([]byte(body))
+	return NewChecker(reflect.TypeFor[order]()).Check([]byte(body))
 }
 
 func TestCheckAcceptsCompleteBody(t *testing.T) {
@@ -57,7 +58,7 @@ func TestCheckAcceptsCompleteBody(t *testing.T) {
 		"extras": {"gift": {"name": "card"}},
 		"when": "2024-01-02T03:04:05Z",
 		"tree": {"value": "root", "children": [{"value": "leaf"}]},
-		"PLAIN": "matched without case"
+		"Plain": "matched by its Go name"
 	}`
 	if problems := check(t, body); problems != nil {
 		t.Fatalf("expected no problems, got %v", problems)
@@ -88,14 +89,49 @@ func TestCheckReportsMissingFieldsAtEveryLevel(t *testing.T) {
 	}
 }
 
+func TestCheckMatchesKeysLikeJSONv2(t *testing.T) {
+	type profile struct {
+		Bio string `json:"bio"`
+	}
+	type account struct {
+		UserID  string  `json:"user_id,case:ignore"`
+		Name    string  `json:"name"`
+		Profile profile `json:",embed"`
+	}
+	checker := NewChecker(reflect.TypeFor[account]())
+
+	if problems := checker.Check([]byte(`{"UserID":"7","name":"Ada","bio":"hi"}`)); problems != nil {
+		t.Fatalf("expected case:ignore and embed to match, got %v", problems)
+	}
+	want := map[string][]string{"name": {"This field is required."}}
+	if problems := checker.Check([]byte(`{"user_id":"7","Name":"Ada","bio":"hi"}`)); !reflect.DeepEqual(problems, want) {
+		t.Fatalf("expected a key in the wrong case to be missing, got %v", problems)
+	}
+}
+
+func TestPathTellsIndexesFromKeys(t *testing.T) {
+	data := []byte(`{"items":[{"name":1},{"name":2}],"extras":{"0":{"name":3}}}`)
+	cases := map[jsontext.Pointer]string{
+		"":                "",
+		"/items/1/name":   "items[1].name",
+		"/extras/0/name":  "extras.0.name",
+		"/missing/0/name": "missing.0.name",
+	}
+	for pointer, want := range cases {
+		if got := Path(data, pointer); got != want {
+			t.Errorf("Path(%q) = %q, want %q", pointer, got, want)
+		}
+	}
+}
+
 func TestCheckWithNothingToCheck(t *testing.T) {
 	type allOptional struct {
 		Name string `json:"name,omitempty"`
 	}
-	if problems := NewChecker(reflect.TypeOf(allOptional{})).Check([]byte(`{}`)); problems != nil {
+	if problems := NewChecker(reflect.TypeFor[allOptional]()).Check([]byte(`{}`)); problems != nil {
 		t.Fatalf("expected no problems, got %v", problems)
 	}
-	if checker := NewChecker(reflect.TypeOf(time.Time{})); checker.root != nil {
+	if checker := NewChecker(reflect.TypeFor[time.Time]()); checker.root != nil {
 		t.Fatal("expected no checks for a type with its own JSON decoding")
 	}
 }

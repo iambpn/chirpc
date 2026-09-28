@@ -78,10 +78,10 @@ func sliceToTsInf(slice []string) string {
 		return "never"
 	}
 
-	inf := ""
+	var inf strings.Builder
 	for _, s := range slice {
-		inf += fmt.Sprintf(`"%s": string;`, s)
+		fmt.Fprintf(&inf, `"%s": string;`, s)
 	}
 
-	return fmt.Sprintf("{ %s }", inf)
+	return fmt.Sprintf("{ %s }", inf.String())
 }

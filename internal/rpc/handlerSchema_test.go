@@ -25,7 +25,7 @@ func TestHandlerSchema_SetBodyType_AcceptsStructValue(t *testing.T) {
 		t.Fatalf("expected bodyType to be set")
 	}
 
-	expected := reflect.TypeOf(testAddress{})
+	expected := reflect.TypeFor[testAddress]()
 	if schema.bodyType != expected {
 		t.Fatalf("expected bodyType %v, got %v", expected, schema.bodyType)
 	}
@@ -48,7 +48,7 @@ func TestHandlerSchema_SetBodyType_AcceptsStructPointer(t *testing.T) {
 		t.Fatalf("expected bodyType to be set from pointer")
 	}
 
-	expected := reflect.TypeOf(testAddress{})
+	expected := reflect.TypeFor[testAddress]()
 	if schema.bodyType != expected {
 		t.Fatalf("expected bodyType %v, got %v", expected, schema.bodyType)
 	}
@@ -93,7 +93,7 @@ func TestHandlerSchema_SetQueryType_AcceptsStructValue(t *testing.T) {
 		t.Fatalf("expected queryType to be set")
 	}
 
-	expected := reflect.TypeOf(testUserProfile{})
+	expected := reflect.TypeFor[testUserProfile]()
 	if schema.queryType != expected {
 		t.Fatalf("expected queryType %v, got %v", expected, schema.queryType)
 	}
@@ -116,7 +116,7 @@ func TestHandlerSchema_SetQueryType_AcceptsStructPointer(t *testing.T) {
 		t.Fatalf("expected queryType to be set from pointer")
 	}
 
-	expected := reflect.TypeOf(testUserProfile{})
+	expected := reflect.TypeFor[testUserProfile]()
 	if schema.queryType != expected {
 		t.Fatalf("expected queryType %v, got %v", expected, schema.queryType)
 	}
@@ -208,7 +208,7 @@ func TestHandlerSchema_URL_ReturnsEmptyStringWhenNotSet(t *testing.T) {
 func TestNewHandlerSchema_CreatesInstanceWithCorrectValues(t *testing.T) {
 	method := "POST"
 	url := "/api/create"
-	returnType := reflect.TypeOf(testHttpResponse[string]{})
+	returnType := reflect.TypeFor[testHttpResponse[string]]()
 
 	schema := NewHandlerSchema(method, url, returnType)
 
@@ -232,7 +232,7 @@ func TestNewHandlerSchema_CreatesInstanceWithCorrectValues(t *testing.T) {
 func TestNewHandlerSchema_InitializesOtherFieldsAsZeroValues(t *testing.T) {
 	method := "GET"
 	url := "/api/list"
-	returnType := reflect.TypeOf("")
+	returnType := reflect.TypeFor[string]()
 
 	schema := NewHandlerSchema(method, url, returnType)
 

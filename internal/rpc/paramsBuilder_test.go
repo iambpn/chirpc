@@ -7,7 +7,7 @@ import (
 
 func TestParamsBuilder_Params(t *testing.T) {
 	t.Run("sets params when schema is not nil and slugs are provided", func(t *testing.T) {
-		schema := NewHandlerSchema("GET", "/test/:id/:name", reflect.TypeOf(""))
+		schema := NewHandlerSchema("GET", "/test/:id/:name", reflect.TypeFor[string]())
 		bqp := NewParamsBuilder(schema)
 
 		slugs := []string{"id", "name"}
@@ -23,7 +23,7 @@ func TestParamsBuilder_Params(t *testing.T) {
 	})
 
 	t.Run("returns early when slugs is empty", func(t *testing.T) {
-		schema := NewHandlerSchema("GET", "/test", reflect.TypeOf(""))
+		schema := NewHandlerSchema("GET", "/test", reflect.TypeFor[string]())
 		bqp := NewParamsBuilder(schema)
 
 		result := bqp.Params([]string{})
@@ -42,7 +42,7 @@ func TestParamsBuilder_Params(t *testing.T) {
 }
 
 func TestNewParamsBuilder(t *testing.T) {
-	schema := NewHandlerSchema("GET", "/test", reflect.TypeOf(""))
+	schema := NewHandlerSchema("GET", "/test", reflect.TypeFor[string]())
 	bqp := NewParamsBuilder(schema)
 
 	if bqp == nil {

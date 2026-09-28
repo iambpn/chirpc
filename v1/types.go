@@ -20,7 +20,7 @@ type HttpResponse[T any] struct {
 // and optional field-level validation errors. It implements error, so a TypedHandler
 // can return it directly.
 type ErrorResponse struct {
-	StatusCode       int                 `json:"statusCode,omitempty"`
+	StatusCode       int                 `json:"statusCode,omitzero"`
 	Errors           []string            `json:"errors,omitempty"`
 	ValidationErrors map[string][]string `json:"validationErrors,omitempty"`
 
@@ -49,8 +49,7 @@ func (e *ErrorResponse) Unwrap() error {
 // An *ErrorResponse anywhere in the chain is used as it is. Any other error becomes
 // a 500 response with a general message, and the error is kept in Cause.
 func toErrorResponse(err error) *ErrorResponse {
-	var errResp *ErrorResponse
-	if errors.As(err, &errResp) && errResp != nil {
+	if errResp, ok := errors.AsType[*ErrorResponse](err); ok && errResp != nil {
 		return errResp
 	}
 	return &ErrorResponse{

@@ -1,125 +1,86 @@
+// Command server runs the example task API.
+//
+// It does not import the tsgen package, so the binary does not include the TypeScript
+// compiler. Run the gen-schema command to update the client types.
 package main
 
 import (
+	"context"
 	"errors"
-	"fmt"
+	"flag"
+	"log/slog"
 	"net/http"
-	"strings"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/iambpn/chirpc/v1"
-	"github.com/iambpn/chirpc/v1/tsgen"
+	"github.com/iambpn/chirpc/cmd/example/api"
 )
 
-const addr = ":8080"
-
-type ErrorResponse struct {
-	Message string `json:"message"`
-}
-
-type body struct {
-	Name string `json:"name"`
-	Age  int    `json:"age" tsOptional:"true"`
-}
-
-type createUser struct {
-	Name string `json:"name"`
-}
-
-type user struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-func (b *body) Validate() error {
-	return errors.New("test error")
-}
-
 func main() {
-	startServer()
-}
+	addr := flag.String("addr", ":8080", "The address to listen on.")
+	flag.Parse()
 
-func startServer() {
-	rpcRouter := chirpc.NewRPCRouter()
+	store := api.NewStore()
+	seed(store)
 
-	chirpc.RegisterErrorHandler(rpcRouter, ErrorHandler)
-
-	chirpc.AddMiddlewares(rpcRouter, middleware.Logger)
-	chirpc.AddTypedHandler(rpcRouter, chirpc.MethodGet, "/", GreetHandler)
-	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/error", GetErrorHandler)
-	chirpc.AddHandler(rpcRouter, chirpc.MethodGet, "/{test}", GetHandler)
-	chirpc.AddTypedHandler(rpcRouter, chirpc.MethodPost, "/users", CreateUserHandler)
-
-	// This example generates the schema at startup for convenience. A production server
-	// should generate it in a separate program, so it does not link the TypeScript compiler.
-	err := tsgen.GenerateRPCSchema(rpcRouter)
-
-	if err != nil {
-		fmt.Println("Error generating types:", err.Error())
-		return
+	// RPCRouter is an http.Handler, so it can be wrapped like any other handler.
+	server := &http.Server{
+		Addr:              *addr,
+		Handler:           middleware.Logger(api.NewRouter(store)),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
-	fmt.Println("Generated the RPC schema at apiSchema.ts.")
 
-	server := rpcRouter.GetHttpServer()
-	server.Addr = addr
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	println("Starting server on", addr)
-	if err := server.ListenAndServe(); err != nil {
-		panic(err)
-	}
-}
-
-func ErrorHandler(r *http.Request, err *chirpc.ErrorResponse) *chirpc.HttpResponse[ErrorResponse] {
-	// StatusCode is left unset, so the status code of the ErrorResponse is used.
-	return &chirpc.HttpResponse[ErrorResponse]{
-		Body: ErrorResponse{Message: strings.Join(err.Errors, ", ")},
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-	}
-}
-
-func GetHandler(r *http.Request) (*chirpc.HttpResponse[map[string]string], *chirpc.ErrorResponse) {
-	return &chirpc.HttpResponse[map[string]string]{
-		StatusCode: http.StatusOK,
-		Body: map[string]string{
-			"message": "Hello, World!",
-		},
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-	}, nil
-}
-
-// GreetHandler shows a typed handler that reads both a JSON body and query parameters.
-func GreetHandler(req *chirpc.Request[body, body]) (*chirpc.HttpResponse[map[string]string], error) {
-	return &chirpc.HttpResponse[map[string]string]{
-		Body: map[string]string{
-			"message": "Hello, " + req.Body.Name + " from " + req.Query.Name + "!",
-		},
-	}, nil
-}
-
-func GetErrorHandler(r *http.Request) (*chirpc.HttpResponse[map[string]string], *chirpc.ErrorResponse) {
-	return nil, &chirpc.ErrorResponse{
-		Errors: []string{"this is a test error"},
-	}
-}
-
-// CreateUserHandler shows a typed handler. chirpc decodes the JSON body into createUser
-// and rejects a body without "name" before the handler runs. The handler only checks
-// rules that chirpc cannot know, such as a name that is present but empty.
-func CreateUserHandler(req *chirpc.Request[createUser, chirpc.NoQuery]) (*chirpc.HttpResponse[user], error) {
-	if req.Body.Name == "" {
-		return nil, &chirpc.ErrorResponse{
-			StatusCode:       http.StatusBadRequest,
-			Errors:           []string{"The name must not be empty."},
-			ValidationErrors: map[string][]string{"name": {"This field must not be empty."}},
+	go func() {
+		slog.Info("The server is listening.", "addr", *addr)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("The server stopped with an error.", "error", err)
+			os.Exit(1)
 		}
-	}
+	}()
 
-	return &chirpc.HttpResponse[user]{
-		StatusCode: http.StatusCreated,
-		Body:       user{ID: "1", Name: req.Body.Name},
-	}, nil
+	<-ctx.Done()
+	slog.Info("The server is shutting down.")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Error("The server did not shut down cleanly.", "error", err)
+	}
+}
+
+// seed adds a few tasks, so the list endpoint has data before the client creates any.
+func seed(store *api.Store) {
+	dueAt := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
+
+	store.Create("u_alice", api.Task{
+		Title:    "Write the release notes",
+		Status:   api.StatusDoing,
+		Priority: api.PriorityHigh,
+		Tags:     []string{"docs", "release"},
+		DueAt:    &dueAt,
+		Checklist: []api.ChecklistItem{
+			{Text: "List the new features", Done: true},
+			{Text: "List the breaking changes"},
+		},
+	})
+	store.Create("u_alice", api.Task{
+		Title:    "Clean up old branches",
+		Status:   api.StatusTodo,
+		Priority: api.PriorityLow,
+		Tags:     []string{"chore"},
+	})
+	store.Create("u_bob", api.Task{
+		Title:    "Only Bob can see this task",
+		Status:   api.StatusTodo,
+		Priority: api.PriorityMedium,
+	})
 }

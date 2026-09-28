@@ -1,7 +1,7 @@
 package chirpc
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type createUserBody struct {
@@ -112,6 +113,9 @@ func TestTypedHandlerRejectsBadRequests(t *testing.T) {
 		{"missing body field", "/teams/1/users?notify=true", `{"age":30}`, "The request body is not valid.",
 			map[string][]string{"name": {"This field is required."}}},
 		{"null body", "/teams/1/users?notify=true", "null", "The request body is missing.", nil},
+		{"duplicate key", "/teams/1/users?notify=true", `{"name":"Ada","name":"Bob"}`, "The request body is not valid JSON.", nil},
+		{"key in the wrong case", "/teams/1/users?notify=true", `{"Name":"Ada"}`, "The request body is not valid.",
+			map[string][]string{"name": {"This field is required."}}},
 	}
 
 	for _, c := range cases {
@@ -264,7 +268,44 @@ func TestTypedHandlerReportsMissingNestedBodyFields(t *testing.T) {
 		t.Fatalf("expected validation errors %v, got %v", want, got)
 	}
 
+	recorder = serveBody(r, http.MethodPost, "/orders", `{"customer":"Ada","lines":[{"sku":"a"},{"sku":"b","quantity":"two"}]}`)
+	want = map[string][]string{"lines[1].quantity": {"This value must be a number."}}
+	if got := decodeErrorResponse(t, recorder).ValidationErrors; !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected validation errors %v, got %v", want, got)
+	}
+
 	if code := serveBody(r, http.MethodPost, "/orders", `{"customer":"Ada","lines":[{"sku":"a"}]}`).Code; code != http.StatusOK || !called {
 		t.Fatalf("expected a complete body to reach the handler, got %d", code)
+	}
+}
+
+func TestTypedHandlerReportsValuesWithTheirOwnDecoding(t *testing.T) {
+	type eventBody struct {
+		At time.Time `json:"at"`
+	}
+	r := NewRPCRouter()
+	AddTypedHandler(r, MethodPost, "/events", func(req *Request[eventBody, NoQuery]) (*HttpResponse[string], error) {
+		return &HttpResponse[string]{Body: "ok"}, nil
+	})
+
+	recorder := serveBody(r, http.MethodPost, "/events", `{"at":"yesterday"}`)
+	want := map[string][]string{"at": {"This value is not valid."}}
+	if got := decodeErrorResponse(t, recorder).ValidationErrors; recorder.Code != http.StatusBadRequest || !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected 400 with %v, got %d with %v", want, recorder.Code, got)
+	}
+}
+
+func TestTypedHandlerReadsDurationsAsNanoseconds(t *testing.T) {
+	type timerBody struct {
+		Wait time.Duration `json:"wait"`
+	}
+	r := NewRPCRouter()
+	AddTypedHandler(r, MethodPost, "/timers", func(req *Request[timerBody, NoQuery]) (*HttpResponse[timerBody], error) {
+		return &HttpResponse[timerBody]{Body: timerBody{Wait: req.Body.Wait * 2}}, nil
+	})
+
+	recorder := serveBody(r, http.MethodPost, "/timers", `{"wait":1500000000}`)
+	if recorder.Code != http.StatusOK || recorder.Body.String() != `{"wait":3000000000}` {
+		t.Fatalf("expected the doubled duration in nanoseconds, got %d with %q", recorder.Code, recorder.Body.String())
 	}
 }

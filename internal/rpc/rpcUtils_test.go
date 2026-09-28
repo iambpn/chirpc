@@ -42,14 +42,14 @@ func TestExtractReturnType_ExtractsStructTypeFromFunctionSignature(t *testing.T)
 		t.Fatalf("expected struct kind, got %s", retType.Kind())
 	}
 
-	expectedType := reflect.TypeOf(testHttpResponse[string]{})
+	expectedType := reflect.TypeFor[testHttpResponse[string]]()
 	if retType != expectedType {
 		t.Fatalf("expected return type %v, got %v", expectedType, retType)
 	}
 }
 
 func TestExtractReturnType_ReturnsErrorWhenInputIsNotAFunction(t *testing.T) {
-	_, err := extractReturnType(reflect.TypeOf(42))
+	_, err := extractReturnType(reflect.TypeFor[int]())
 	if err == nil || !strings.Contains(err.Error(), "not a function") {
 		t.Fatalf("expected not a function error, got %v", err)
 	}
@@ -108,7 +108,7 @@ func TestExtractReturnType_HandlesNonPointerReturnType(t *testing.T) {
 		t.Fatalf("expected struct kind, got %s", retType.Kind())
 	}
 
-	expectedType := reflect.TypeOf(testHttpResponse[string]{})
+	expectedType := reflect.TypeFor[testHttpResponse[string]]()
 	if retType != expectedType {
 		t.Fatalf("expected return type %v, got %v", expectedType, retType)
 	}
@@ -123,7 +123,7 @@ func TestExtractReturnType_HandlesPointerToFunction(t *testing.T) {
 		t.Fatalf("extractReturnType returned error: %v", err)
 	}
 
-	expectedType := reflect.TypeOf(testHttpResponse[string]{})
+	expectedType := reflect.TypeFor[testHttpResponse[string]]()
 	if retType != expectedType {
 		t.Fatalf("expected return type %v, got %v", expectedType, retType)
 	}
@@ -137,7 +137,7 @@ func TestExtractReturnType_HandlesMultipleReturnValues(t *testing.T) {
 		t.Fatalf("extractReturnType returned error: %v", err)
 	}
 
-	expectedType := reflect.TypeOf(testHttpResponse[string]{})
+	expectedType := reflect.TypeFor[testHttpResponse[string]]()
 	if retType != expectedType {
 		t.Fatalf("expected first return type %v, got %v", expectedType, retType)
 	}
@@ -163,7 +163,7 @@ func TestBuildGoToTsSchema_CreatesSchemaWithValidHandler(t *testing.T) {
 		t.Fatalf("expected URL /users/{id}, got %s", schema.url)
 	}
 
-	expectedType := reflect.TypeOf(testHttpResponse[testUserProfile]{})
+	expectedType := reflect.TypeFor[testHttpResponse[testUserProfile]]()
 	if schema.returnType != expectedType {
 		t.Fatalf("expected return type %v, got %v", expectedType, schema.returnType)
 	}
@@ -198,7 +198,7 @@ func TestBuildGoToTsSchema_HandlesPointerHandler(t *testing.T) {
 		t.Fatal("expected non-nil schema")
 	}
 
-	expectedType := reflect.TypeOf(testHttpResponse[testCreateReq]{})
+	expectedType := reflect.TypeFor[testHttpResponse[testCreateReq]]()
 	if schema.returnType != expectedType {
 		t.Fatalf("expected return type %v, got %v", expectedType, schema.returnType)
 	}

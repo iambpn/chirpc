@@ -1,12 +1,13 @@
 // Package tags reads the struct tags that decide how a Go struct field appears
 // in the generated TypeScript, in decoded query strings, and in the required-field
-// check of JSON bodies. All of them use these rules, so a field has the same name
-// everywhere.
+// check of JSON bodies. All of them follow the rules of encoding/json/v2, so a field
+// has the same name everywhere.
 package tags
 
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -19,7 +20,7 @@ const (
 	Omit = "tsOmit"
 )
 
-// FieldName returns the name of a field, which is the key encoding/json uses:
+// FieldName returns the name of a field, which is the key encoding/json/v2 uses:
 // the json tag name, or the Go field name when the tag has no name.
 func FieldName(field reflect.StructField) string {
 	if name, _ := jsonTag(field); name != "" {
@@ -52,21 +53,24 @@ func IsOmitted(field reflect.StructField) bool {
 		field.Tag.Get("typescript") == "-"
 }
 
-// IsEmbedded reports whether a field is an embedded struct whose fields are promoted,
-// as encoding/json does when the embedded field has no json tag.
+// IsEmbedded reports whether the fields of a field's type are promoted into its parent,
+// as encoding/json/v2 does. This happens for a Go embedded field without a json name,
+// and for any field with the json embed option.
 func IsEmbedded(field reflect.StructField) bool {
-	return field.Anonymous && field.Tag.Get("json") == ""
+	name, _ := jsonTag(field)
+	return (field.Anonymous && name == "") || HasJSONOption(field, "embed")
+}
+
+// IgnoresCase reports whether a field has the json case:ignore option. encoding/json/v2
+// then matches its name without regard to case, dashes, or underscores.
+func IgnoresCase(field reflect.StructField) bool {
+	return HasJSONOption(field, "case:ignore")
 }
 
 // HasJSONOption reports whether the json tag of a field has the given option, such as "string".
 func HasJSONOption(field reflect.StructField, option string) bool {
 	_, options := jsonTag(field)
-	for _, candidate := range options {
-		if candidate == option {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(options, option)
 }
 
 // HasRequiredField reports whether the struct typ, or a struct embedded in it, has
@@ -84,8 +88,7 @@ func hasRequiredField(typ reflect.Type, seen map[reflect.Type]bool) bool {
 	}
 	seen[typ] = true
 
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
+	for field := range typ.Fields() {
 		if IsOmitted(field) {
 			continue
 		}

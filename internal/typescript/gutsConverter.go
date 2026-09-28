@@ -99,7 +99,7 @@ func (c *gutsConverter) declarationStrings() ([]string, error) {
 
 func (c *gutsConverter) typeExpression(typ reflect.Type) (bindings.ExpressionType, error) {
 	if typ == nil {
-		return keyword(bindings.KeywordUnknown), nil
+		return new(bindings.KeywordUnknown), nil
 	}
 
 	if tsType, ok := c.typeOverrides[typ]; ok {
@@ -120,16 +120,16 @@ func (c *gutsConverter) typeExpression(typ reflect.Type) (bindings.ExpressionTyp
 func (c *gutsConverter) underlyingTypeExpression(typ reflect.Type) (bindings.ExpressionType, error) {
 	switch typ.Kind() {
 	case reflect.Bool:
-		return keyword(bindings.KeywordBoolean), nil
+		return new(bindings.KeywordBoolean), nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Uintptr, reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128:
-		return keyword(bindings.KeywordNumber), nil
+		return new(bindings.KeywordNumber), nil
 	case reflect.String:
-		return keyword(bindings.KeywordString), nil
+		return new(bindings.KeywordString), nil
 	case reflect.Slice:
 		if typ.Elem().Kind() == reflect.Uint8 {
-			return keyword(bindings.KeywordString), nil
+			return new(bindings.KeywordString), nil
 		}
 		element, err := c.typeExpression(typ.Elem())
 		if err != nil {
@@ -138,7 +138,7 @@ func (c *gutsConverter) underlyingTypeExpression(typ reflect.Type) (bindings.Exp
 		return bindings.Array(element), nil
 	case reflect.Array:
 		if typ.Elem().Kind() == reflect.Uint8 {
-			return keyword(bindings.KeywordString), nil
+			return new(bindings.KeywordString), nil
 		}
 		element, err := c.typeExpression(typ.Elem())
 		if err != nil {
@@ -154,7 +154,8 @@ func (c *gutsConverter) underlyingTypeExpression(typ reflect.Type) (bindings.Exp
 		if err != nil {
 			return nil, fmt.Errorf("map value: %w", err)
 		}
-		return bindings.Union(guts.RecordReference(key, value), &bindings.Null{}), nil
+		// encoding/json/v2 sends a nil map as {}, so a map is never null.
+		return guts.RecordReference(key, value), nil
 	case reflect.Struct:
 		return c.structExpression(typ)
 	case reflect.Pointer:
@@ -164,9 +165,9 @@ func (c *gutsConverter) underlyingTypeExpression(typ reflect.Type) (bindings.Exp
 		}
 		return nullable(element), nil
 	case reflect.Interface:
-		return keyword(bindings.KeywordUnknown), nil
+		return new(bindings.KeywordUnknown), nil
 	case reflect.Func, reflect.Chan, reflect.UnsafePointer, reflect.Invalid:
-		return keyword(bindings.KeywordUnknown), nil
+		return new(bindings.KeywordUnknown), nil
 	default:
 		return nil, fmt.Errorf("unsupported Go type %s", typ)
 	}
@@ -235,8 +236,7 @@ func (c *gutsConverter) structMembers(typ reflect.Type) ([]*bindings.PropertySig
 	fields := make([]*bindings.PropertySignature, 0, typ.NumField())
 	heritage := make([]bindings.ExpressionType, 0)
 
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
+	for field := range typ.Fields() {
 		if err := tags.CheckRemovedTags(field); err != nil {
 			return nil, nil, fmt.Errorf("type %s: %w", typ, err)
 		}
@@ -285,9 +285,24 @@ func (c *gutsConverter) fieldType(field reflect.StructField) (bindings.Expressio
 		return nil, err
 	}
 	if tags.HasJSONOption(field, "string") {
+		if !isNumber(dereference(field.Type)) {
+			return nil, fmt.Errorf("the json string option works only on number fields, but the type is %s", field.Type)
+		}
 		return jsonStringExpression(field.Type), nil
 	}
 	return expression, nil
+}
+
+// isNumber reports whether encoding/json/v2 sends typ as a JSON number.
+func isNumber(typ reflect.Type) bool {
+	switch typ.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
 }
 
 // rawType returns an expression that is written as the TypeScript text tsType.
@@ -356,7 +371,7 @@ func jsonStringExpression(typ reflect.Type) bindings.ExpressionType {
 		nullableType = true
 		typ = typ.Elem()
 	}
-	expression := bindings.ExpressionType(keyword(bindings.KeywordString))
+	expression := bindings.ExpressionType(new(bindings.KeywordString))
 	if nullableType {
 		expression = nullable(expression)
 	}
@@ -374,10 +389,6 @@ func nullable(expression bindings.ExpressionType) bindings.ExpressionType {
 	return bindings.Union(expression, &bindings.Null{})
 }
 
-func keyword(value bindings.LiteralKeyword) *bindings.LiteralKeyword {
-	return &value
-}
-
 func dereference(typ reflect.Type) reflect.Type {
 	for typ != nil && typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
@@ -386,26 +397,27 @@ func dereference(typ reflect.Type) reflect.Type {
 }
 
 func standardTypeMapping(typ reflect.Type) (bindings.ExpressionType, bool) {
-	if typ == reflect.TypeOf(time.Time{}) {
-		return keyword(bindings.KeywordString), true
+	if typ == reflect.TypeFor[time.Time]() {
+		return new(bindings.KeywordString), true
 	}
 
 	name := typ.PkgPath() + "." + typ.Name()
 	switch name {
 	case "time.Duration":
-		return keyword(bindings.KeywordNumber), true
+		// chirpc sends a duration as a number of nanoseconds.
+		return new(bindings.KeywordNumber), true
 	case "database/sql.NullTime":
-		return nullable(keyword(bindings.KeywordString)), true
+		return nullable(new(bindings.KeywordString)), true
 	case "database/sql.NullString":
-		return nullable(keyword(bindings.KeywordString)), true
+		return nullable(new(bindings.KeywordString)), true
 	case "database/sql.NullBool":
-		return nullable(keyword(bindings.KeywordBoolean)), true
+		return nullable(new(bindings.KeywordBoolean)), true
 	case "database/sql.NullInt64", "database/sql.NullInt32", "database/sql.NullInt16", "database/sql.NullFloat64":
-		return nullable(keyword(bindings.KeywordNumber)), true
+		return nullable(new(bindings.KeywordNumber)), true
 	case "github.com/google/uuid.UUID", "net/netip.Addr", "net/url.URL", "regexp.Regexp":
-		return keyword(bindings.KeywordString), true
+		return new(bindings.KeywordString), true
 	case "github.com/google/uuid.NullUUID":
-		return nullable(keyword(bindings.KeywordString)), true
+		return nullable(new(bindings.KeywordString)), true
 	default:
 		return nil, false
 	}

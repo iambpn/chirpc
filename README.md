@@ -30,7 +30,7 @@ No more hand-written DTOs, no more runtime surprises, no more API documentation 
 
 ### Prerequisites
 
-- **Go**: Version 1.25 or higher
+- **Go**: Version 1.27 or higher
 - **Node.js**: Version 18 or higher (for consuming generated TypeScript types)
 - **TypeScript**: Version 4.5 or higher (recommended)
 
@@ -183,9 +183,11 @@ chirpc.AddTypedHandler(router, chirpc.MethodPost, "/teams/{teamId}/users", Creat
 ```
 
 - **No body or query:** use `chirpc.NoBody` or `chirpc.NoQuery`, as in `chirpc.Request[chirpc.NoBody, chirpc.NoQuery]`.
-- **Body:** decoded from JSON. A missing or `null` body, invalid JSON, a value of the wrong type, or a missing required field returns 400 with an `ErrorResponse`, and `validationErrors` names the field. Required fields are checked at every level, including nested objects, array elements, and map values, with paths such as `lines[1].sku`. A field is required unless it has `omitempty`, `omitzero`, or `tsOptional:"true"`, the same rule the TypeScript uses. A present `null` value counts as given. Keys are matched like `encoding/json` does: the `json` tag name or the Go field name, ignoring case.
+- **Body:** decoded from JSON. A missing or `null` body, invalid JSON, a value of the wrong type, or a missing required field returns 400 with an `ErrorResponse`, and `validationErrors` names the field. Required fields are checked at every level, including nested objects, array elements, and map values, with paths such as `lines[1].sku`. A field is required unless it has `omitempty`, `omitzero`, or `tsOptional:"true"`, the same rule the TypeScript uses. A present `null` value counts as given. Keys are matched like `encoding/json/v2` does: the `json` tag name or the Go field name, matched exactly, including case. Add the `case:ignore` option, as in `json:"user_id,case:ignore"`, to also accept other cases and names without dashes or underscores.
 - **Query:** read with the same names as the TypeScript members: the `json` tag name, or the Go field name. Query keys are matched exactly, including case. Fields that are not optional are required, and a missing or invalid value returns 400 with `validationErrors` for each key. Supported field types are strings, booleans, numbers, types that implement `encoding.TextUnmarshaler` (such as `time.Time`), pointers to these, and slices of these for repeated keys (`?tag=a&tag=b`). Other types panic when the handler is registered.
 - **Errors:** an `*ErrorResponse` anywhere in the returned error chain is sent as it is, including one wrapped with `fmt.Errorf("...: %w", errResp)`. Any other error becomes a 500 `ErrorResponse` with a general message, and the original error is kept in its `Cause` field. `Cause` is never sent to the client, but your error handler can read it for logging. Decoding errors also go through your error handler.
+
+- **JSON rules:** chirpc reads and writes JSON with `encoding/json/v2`. A body with a duplicate key or invalid UTF-8 is rejected as invalid JSON. A nil slice is sent as `[]` and a nil map as `{}`. A `time.Duration` is sent and read as a number of nanoseconds. `omitempty` leaves out only values that would be sent as `null`, `""`, `[]`, or `{}`, so use `omitzero` to leave out `0` or `false`.
 
 `AddHandler` still works for handlers that read the raw `*http.Request` themselves. Its routes have no `body` or `query` in the schema, so use `AddTypedHandler` for any route that takes a body or query parameters.
 
@@ -357,7 +359,7 @@ type User struct {
     Email     string `json:"email" tsType:"string"`       // Override TypeScript type
     Password  string `json:"password" tsOmit:"true"`      // Exclude from TypeScript
     CreatedAt time.Time `json:"created_at"`               // Mapped to string in TypeScript
-    Metadata  map[string]interface{} `json:"metadata"`   // Mapped to Record<string, unknown> | null
+    Metadata  map[string]any `json:"metadata"`           // Mapped to Record<string, unknown>
     Tags      []string `json:"tags"`                      // Mapped to string[]
     Profile   *Profile `json:"profile"`                   // Mapped to Profile | null
 }
@@ -382,7 +384,7 @@ interface User {
   age?: number; // Optional via tsOptional
   email: string;
   created_at: string; // time.Time becomes string
-  metadata: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
   tags: string[];
   profile: Profile | null; // Pointer becomes nullable
   // password is omitted via tsOmit
@@ -392,6 +394,8 @@ interface User {
 **Available Struct Tags:**
 
 - `json:"newName"` - Rename the field. The same name is used in the JSON, the query string, and TypeScript
+- `json:",embed"` - Promote the fields of a struct field into its parent, as Go embedding does
+- `json:"name,string"` - Send a number field as a string. This works only on number fields, and schema generation returns an error for other types
 - `tsType:"customType"` - Override the generated TypeScript type
 - `tsOptional:"true"` - Make the field optional (add `?` in TypeScript)
 - `tsOmit:"true"` - Exclude the field from TypeScript generation
@@ -406,14 +410,15 @@ The `tsKey` tag is no longer supported, because it renamed a field only in TypeS
 - `[]T` → `T[]`
 - `[N]T` → a fixed-length TypeScript tuple
 - `[]byte` and `[N]byte` → `string`
-- `map[K]V` → `Record<K, V> | null`
+- `map[K]V` → `Record<K, V>`
 - `*T` → `T | null`
 - `struct` → separate interface
 - Anonymous struct → inline object type
 - `time.Time` → `string`
+- `time.Duration` → `number` (nanoseconds)
 - `interface{}` and unsupported function/channel types → `unknown`
 - Unexported fields → ignored
-- Anonymous struct fields → TypeScript inheritance/intersections
+- Anonymous struct fields and fields with `json:",embed"` → TypeScript inheritance/intersections
 
 #### Custom Types
 
@@ -451,7 +456,8 @@ chirpc.MethodNotAllowed(router, func(w http.ResponseWriter, r *http.Request) {
 
 ## Examples
 
-- See the [Chirpc Examples](https://github.com/iambpn/Chirpc-examples) repository for complete server and client implementations.
+- [cmd/example](cmd/example) is a complete task board API with a Go server, a schema generator, in-memory tests, and a typed TypeScript client. Its README explains how to run it and which features each route shows.
+- See the [Chirpc Examples](https://github.com/iambpn/Chirpc-examples) repository for more server and client implementations.
 
 ## Exposed APIs
 
@@ -644,7 +650,7 @@ Pre-defined HTTP method constants for use with `AddHandler`:
 
   ```go
   type ErrorResponse struct {
-      StatusCode       int                 `json:"statusCode,omitempty"`
+      StatusCode       int                 `json:"statusCode,omitzero"`
       Errors           []string            `json:"errors,omitempty"`
       ValidationErrors map[string][]string `json:"validationErrors,omitempty"`
       Cause            error               `json:"-"`
@@ -768,14 +774,17 @@ Contributions are welcome! Whether you want to fix a bug, add a feature, or impr
 To test your changes with the example application:
 
 ```bash
-# Run the Go example server
-cd cmd/example
-go run main.go
+# Run the example tests
+go test ./cmd/example/...
 
-# In another terminal, test the TypeScript client
-cd cmd/js
-npm install
-npx tsx main.ts
+# Run the Go example server
+make run-server
+
+# In another terminal, generate the schema and run the TypeScript client
+make gen-schema
+cd cmd/example/client
+pnpm install
+pnpm start
 ```
 
 ### Reporting Issues

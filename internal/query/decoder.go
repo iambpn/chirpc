@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"slices"
 	"strconv"
 
 	"github.com/iambpn/chirpc/internal/tags"
@@ -50,9 +51,8 @@ func NewDecoder(typ reflect.Type) (*Decoder, error) {
 // addFields adds the fields of typ, whose position in the root struct is index.
 // keys maps each query key to the Go field that uses it, to report duplicate keys.
 func (d *Decoder) addFields(typ reflect.Type, index []int, keys map[string]string) error {
-	for i := 0; i < typ.NumField(); i++ {
-		structField := typ.Field(i)
-		fieldIndex := append(append([]int{}, index...), i)
+	for structField := range typ.Fields() {
+		fieldIndex := append(slices.Clone(index), structField.Index...)
 
 		if err := tags.CheckRemovedTags(structField); err != nil {
 			return err

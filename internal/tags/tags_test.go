@@ -14,7 +14,7 @@ func TestFieldNameOptionalAndOmitted(t *testing.T) {
 		Skipped  string `json:"-"`
 		Hidden   string `tsOmit:"true"`
 	}
-	typ := reflect.TypeOf(sample{})
+	typ := reflect.TypeFor[sample]()
 	field := func(name string) reflect.StructField {
 		f, _ := typ.FieldByName(name)
 		return f
@@ -31,6 +31,28 @@ func TestFieldNameOptionalAndOmitted(t *testing.T) {
 	}
 	if !IsOmitted(field("Skipped")) || !IsOmitted(field("Hidden")) || IsOmitted(field("Plain")) {
 		t.Error("unexpected IsOmitted result")
+	}
+}
+
+func TestIsEmbeddedAndIgnoresCase(t *testing.T) {
+	type inner struct {
+		Value string `json:"value"`
+	}
+	type sample struct {
+		inner
+		Explicit inner `json:",embed"`
+		Named    inner `json:"named"`
+		UserID   int   `json:"user_id,case:ignore"`
+	}
+	typ := reflect.TypeFor[sample]()
+
+	for i, want := range []bool{true, true, false, false} {
+		if got := IsEmbedded(typ.Field(i)); got != want {
+			t.Errorf("IsEmbedded(%s) = %v, want %v", typ.Field(i).Name, got, want)
+		}
+	}
+	if !IgnoresCase(typ.Field(3)) || IgnoresCase(typ.Field(2)) {
+		t.Error("unexpected IgnoresCase result")
 	}
 }
 
@@ -52,13 +74,13 @@ func TestHasRequiredField(t *testing.T) {
 		*recursive
 	}
 
-	if HasRequiredField(reflect.TypeOf(allOptional{})) {
+	if HasRequiredField(reflect.TypeFor[allOptional]()) {
 		t.Error("expected allOptional to have no required field")
 	}
-	if !HasRequiredField(reflect.TypeOf(&withRequired{})) {
+	if !HasRequiredField(reflect.TypeFor[*withRequired]()) {
 		t.Error("expected withRequired to have a required field")
 	}
-	if HasRequiredField(reflect.TypeOf(recursive{})) {
+	if HasRequiredField(reflect.TypeFor[recursive]()) {
 		t.Error("expected recursive embedding to stop without a required field")
 	}
 	_ = allOptional{}.hidden
@@ -69,7 +91,7 @@ func TestCheckRemovedTags(t *testing.T) {
 		Legacy string `tsKey:"old"`
 		Plain  string `json:"plain"`
 	}
-	typ := reflect.TypeOf(sample{})
+	typ := reflect.TypeFor[sample]()
 
 	if err := CheckRemovedTags(typ.Field(0)); err == nil {
 		t.Error("expected an error for tsKey")
